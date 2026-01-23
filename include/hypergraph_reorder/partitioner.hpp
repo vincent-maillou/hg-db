@@ -1,4 +1,4 @@
-// partitioner.hpp - KaHyPar integration for hypergraph partitioning
+// partitioner.hpp - MT-KaHyPar integration for hypergraph partitioning
 #ifndef HYPERGRAPH_REORDER_PARTITIONER_HPP
 #define HYPERGRAPH_REORDER_PARTITIONER_HPP
 
@@ -9,6 +9,14 @@
 #include <vector>
 
 namespace hypergraph_reorder {
+
+// MT-KaHyPar preset configuration
+enum class MtKahyparPreset {
+    DEFAULT,      // Fast, good quality (default preset)
+    QUALITY,      // Higher quality, slower
+    DETERMINISTIC,// Deterministic partitioning
+    LARGE_K       // Optimized for large number of parts
+};
 
 // Vertex partition (result of converting CNH partition to vertex separator)
 struct VertexPartition {
@@ -22,28 +30,30 @@ struct VertexPartition {
     }
 };
 
-// Hypergraph partitioner
+// Hypergraph partitioner using MT-KaHyPar
 class HypergraphPartitioner {
 public:
     struct Options {
         index_t n_parts;
         double imbalance;
-        std::string kahypar_config_path;
+        MtKahyparPreset preset;  // MT-KaHyPar preset (replaces config file)
         int seed;
         bool suppress_output;
+        int num_threads;         // Number of threads for MT-KaHyPar
 
         Options()
             : n_parts(4),
               imbalance(0.03),
-              kahypar_config_path(""),
+              preset(MtKahyparPreset::DEFAULT),
               seed(-1),
-              suppress_output(false) {}
+              suppress_output(false),
+              num_threads(0) {}  // 0 = auto-detect
     };
 
     explicit HypergraphPartitioner(const Options& opts = Options());
     ~HypergraphPartitioner();
 
-    // Partition hypergraph using KaHyPar
+    // Partition hypergraph using MT-KaHyPar
     HypergraphPartition partition(const Hypergraph& hg);
 
     // Convert CNH partition to vertex separator partition
@@ -54,10 +64,10 @@ public:
 
 private:
     Options opts_;
-    void* kahypar_context_;  // Opaque KaHyPar context
+    void* context_;  // Opaque MT-KaHyPar context
 
-    void init_kahypar_context();
-    void cleanup_kahypar_context();
+    void init_context();
+    void cleanup_context();
 };
 
 } // namespace hypergraph_reorder

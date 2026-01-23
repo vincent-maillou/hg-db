@@ -2,33 +2,12 @@
 #include <iostream>
 #include <string>
 #include <iomanip>
-#include <filesystem>
+#include <cstring>
 
 using namespace hypergraph_reorder;
 
-const char* DEFAULT_CONFIG = "config/fast_km1_kKaHyPar.ini";
-
-std::string find_config_file(const std::string& argv0) {
-    namespace fs = std::filesystem;
-
-    std::vector<std::string> search_paths = {
-        DEFAULT_CONFIG,
-        std::string("../") + DEFAULT_CONFIG,
-        fs::path(argv0).parent_path() / DEFAULT_CONFIG,
-        fs::path(argv0).parent_path() / ".." / DEFAULT_CONFIG,
-    };
-
-    for (const auto& path : search_paths) {
-        if (fs::exists(path)) {
-            return path;
-        }
-    }
-
-    return "";
-}
-
 void print_usage(const char* prog_name) {
-    std::cout << "Usage: " << prog_name << " <input_matrix> <k>\n\n";
+    std::cout << "Usage: " << prog_name << " <input_matrix> <k> [options]\n\n";
     std::cout << "Arguments:\n";
     std::cout << "  <input_matrix>     Input matrix file (format auto-detected)\n";
     std::cout << "  <k>                Number of diagonal blocks/parts\n\n";
@@ -39,6 +18,10 @@ void print_usage(const char* prog_name) {
     std::cout << "Output: <input>_reordered.mtx\n\n";
     std::cout << "Options:\n";
     std::cout << "  -h, --help         Show this help message\n";
+    std::cout << "  --preset <name>    MT-KaHyPar preset (default: default)\n";
+    std::cout << "                     Choices: default, quality, deterministic, large_k\n";
+    std::cout << "  --threads <n>      Number of threads (default: auto-detect)\n";
+    std::cout << "  --quiet            Suppress partitioner output\n";
 }
 
 void print_statistics(const Statistics& stats) {
@@ -63,6 +46,21 @@ void print_statistics(const Statistics& stats) {
               << stats.time_total_ms << " ms\n";
 }
 
+MtKahyparPreset parse_preset(const std::string& preset_str) {
+    if (preset_str == "quality") {
+        return MtKahyparPreset::QUALITY;
+    } else if (preset_str == "deterministic") {
+        return MtKahyparPreset::DETERMINISTIC;
+    } else if (preset_str == "large_k") {
+        return MtKahyparPreset::LARGE_K;
+    } else if (preset_str == "default") {
+        return MtKahyparPreset::DEFAULT;
+    } else {
+        std::cerr << "Warning: Unknown preset '" << preset_str << "', using default\n";
+        return MtKahyparPreset::DEFAULT;
+    }
+}
+
 int main(int argc, char** argv) {
     if (argc < 2) {
         print_usage(argv[0]);
@@ -74,8 +72,8 @@ int main(int argc, char** argv) {
         return 0;
     }
 
-    if (argc != 3) {
-        std::cerr << "Error: Expected 2 arguments, got " << (argc - 1) << "\n\n";
+    if (argc < 3) {
+        std::cerr << "Error: Expected at least 2 arguments\n\n";
         print_usage(argv[0]);
         return 1;
     }
@@ -88,6 +86,30 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    // Default options
+    MtKahyparPreset preset = MtKahyparPreset::DEFAULT;
+    int num_threads = 0;  // 0 = auto-detect
+    bool quiet = false;
+
+    // Parse optional arguments
+    for (int i = 3; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg == "--preset" && i + 1 < argc) {
+            preset = parse_preset(argv[++i]);
+        } else if (arg == "--threads" && i + 1 < argc) {
+            num_threads = std::atoi(argv[++i]);
+        } else if (arg == "--quiet") {
+            quiet = true;
+        } else if (arg == "-h" || arg == "--help") {
+            print_usage(argv[0]);
+            return 0;
+        } else {
+            std::cerr << "Error: Unknown option '" << arg << "'\n\n";
+            print_usage(argv[0]);
+            return 1;
+        }
+    }
+
     size_t dot_pos = input_path.find_last_of('.');
     std::string output_path;
     if (dot_pos != std::string::npos) {
@@ -96,21 +118,15 @@ int main(int argc, char** argv) {
         output_path = input_path + "_reordered.mtx";
     }
 
-    std::string config_path = find_config_file(argv[0]);
-    if (config_path.empty()) {
-        std::cerr << "Warning: Could not find " << DEFAULT_CONFIG << "\n";
-        std::cerr << "Proceeding with KaHyPar defaults (may be slower)\n\n";
-    }
-
     SymmetricDBReorderer::Options opts;
     opts.n_parts = n_parts;
     opts.imbalance = 0.03;
-    opts.kahypar_config_path = config_path;
+    opts.preset = preset;
     opts.seed = -1;
     opts.ordering_method = OrderingMethod::AMD;
     opts.use_openmp = true;
-    opts.num_threads = -1;
-    opts.suppress_kahypar_output = false;
+    opts.num_threads = num_threads;
+    opts.suppress_partitioner_output = quiet;
 
     try {
         SymmetricDBReorderer reorderer(opts);

@@ -27,11 +27,28 @@ extern "C" hgr_reorderer_t *hgr_create(const hgr_options_t *opts)
         {
             cpp_opts.n_parts = opts->n_parts;
             cpp_opts.imbalance = opts->imbalance;
-            cpp_opts.kahypar_config_path = opts->kahypar_config_path ? opts->kahypar_config_path : "";
             cpp_opts.seed = opts->seed;
             cpp_opts.use_openmp = opts->use_openmp != 0;
             cpp_opts.num_threads = opts->num_threads;
-            cpp_opts.suppress_kahypar_output = opts->suppress_kahypar_output != 0;
+            cpp_opts.suppress_partitioner_output = opts->suppress_partitioner_output != 0;
+
+            // Convert preset
+            switch (opts->preset)
+            {
+            case HGR_PRESET_QUALITY:
+                cpp_opts.preset = MtKahyparPreset::QUALITY;
+                break;
+            case HGR_PRESET_DETERMINISTIC:
+                cpp_opts.preset = MtKahyparPreset::DETERMINISTIC;
+                break;
+            case HGR_PRESET_LARGE_K:
+                cpp_opts.preset = MtKahyparPreset::LARGE_K;
+                break;
+            case HGR_PRESET_DEFAULT:
+            default:
+                cpp_opts.preset = MtKahyparPreset::DEFAULT;
+                break;
+            }
 
             // Convert ordering method
             switch (opts->ordering_method)
@@ -82,12 +99,12 @@ extern "C" void hgr_default_options(hgr_options_t *opts)
 
     opts->n_parts = 4;
     opts->imbalance = 0.03;
-    opts->kahypar_config_path = nullptr;
+    opts->preset = HGR_PRESET_DEFAULT;
     opts->seed = -1;
     opts->ordering_method = HGR_ORDERING_AMD;
     opts->use_openmp = 1;
-    opts->num_threads = -1;
-    opts->suppress_kahypar_output = 0;
+    opts->num_threads = 0;  // 0 = auto-detect
+    opts->suppress_partitioner_output = 0;
 }
 
 extern "C" int hgr_reorder_file(hgr_reorderer_t *reorderer,

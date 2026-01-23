@@ -24,6 +24,14 @@ typedef enum {
     HGR_ORDERING_NONE = 6
 } hgr_ordering_method_t;
 
+/* MT-KaHyPar preset enum */
+typedef enum {
+    HGR_PRESET_DEFAULT = 0,      /* Fast, good quality */
+    HGR_PRESET_QUALITY = 1,      /* Higher quality, slower */
+    HGR_PRESET_DETERMINISTIC = 2,/* Deterministic partitioning */
+    HGR_PRESET_LARGE_K = 3       /* Optimized for large number of parts */
+} hgr_preset_t;
+
 /* Matrix format enum */
 typedef enum {
     HGR_FORMAT_MTX = 0,
@@ -36,12 +44,12 @@ typedef enum {
 typedef struct {
     int64_t n_parts;
     double imbalance;
-    const char* kahypar_config_path;
+    hgr_preset_t preset;         /* MT-KaHyPar preset */
     int seed;
     hgr_ordering_method_t ordering_method;
     int use_openmp;
-    int num_threads;
-    int suppress_kahypar_output;
+    int num_threads;             /* 0 = auto-detect */
+    int suppress_partitioner_output;
 } hgr_options_t;
 
 /* Statistics structure */

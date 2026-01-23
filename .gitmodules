@@ -1,0 +1,3 @@
+[submodule "external/mt-kahypar"]
+	path = external/mt-kahypar
+	url = https://github.com/kahypar/mt-kahypar.git

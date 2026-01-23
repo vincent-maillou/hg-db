@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.14)
+cmake_minimum_required(VERSION 3.16)
 project(hypergraph_reorder VERSION 1.0.0 LANGUAGES CXX C)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -44,17 +44,16 @@ if(USE_OPENMP)
     endif()
 endif()
 
-# Find KaHyPar
-find_library(KAHYPAR_LIBRARY
-    NAMES kahypar libkahypar
-    PATHS /usr/local/lib /usr/lib
-    REQUIRED)
-find_path(KAHYPAR_INCLUDE_DIR
-    NAMES libkahypar.h
-    PATHS /usr/local/include /usr/include
-    REQUIRED)
-message(STATUS "KaHyPar library: ${KAHYPAR_LIBRARY}")
-message(STATUS "KaHyPar include: ${KAHYPAR_INCLUDE_DIR}")
+# MT-KaHyPar configuration
+set(KAHYPAR_DOWNLOAD_TBB ON CACHE BOOL "Download TBB for MT-KaHyPar")
+set(KAHYPAR_PYTHON OFF CACHE BOOL "Disable Python bindings")
+set(KAHYPAR_ENABLE_HIGHEST_QUALITY_PRESET ON CACHE BOOL "Enable highest quality preset")
+set(KAHYPAR_ENABLE_LARGE_K_PARTITIONING_PRESET ON CACHE BOOL "Enable large k preset")
+set(KAHYPAR_ENABLE_GRAPH_PARTITIONING_PRESET ON CACHE BOOL "Enable graph partitioning")
+
+# Add MT-KaHyPar as subdirectory
+add_subdirectory(external/mt-kahypar EXCLUDE_FROM_ALL)
+message(STATUS "MT-KaHyPar included from external/mt-kahypar")
 
 # Find SuiteSparse components
 find_library(AMD_LIBRARY amd REQUIRED)
@@ -97,13 +96,14 @@ target_include_directories(hypergraph_reorder
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include>
     PRIVATE
-        ${KAHYPAR_INCLUDE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/external/mt-kahypar/include
         ${SUITESPARSE_INCLUDE_DIR}
 )
 
 target_link_libraries(hypergraph_reorder
+    PRIVATE
+        mtkahypar
     PUBLIC
-        ${KAHYPAR_LIBRARY}
         ${AMD_LIBRARY}
         ${CHOLMOD_LIBRARY}
         ${CAMD_LIBRARY}
@@ -140,11 +140,6 @@ if(BUILD_CLI)
     # Install CLI
     install(TARGETS hypergraph_reorder_cli
             RUNTIME DESTINATION bin)
-
-    # Install config files
-    install(DIRECTORY config/
-            DESTINATION share/hypergraph_reorder/config
-            FILES_MATCHING PATTERN "*.ini")
 endif()
 
 # Tests
@@ -159,9 +154,8 @@ if(BUILD_BENCHMARKS)
     # add_subdirectory(benchmarks)
 endif()
 
-# Installation
+# Installation (basic - no CMake export due to MT-KaHyPar bundling)
 install(TARGETS hypergraph_reorder
-        EXPORT hypergraph_reorder-targets
         LIBRARY DESTINATION lib
         ARCHIVE DESTINATION lib
         RUNTIME DESTINATION bin
@@ -170,32 +164,6 @@ install(TARGETS hypergraph_reorder
 install(DIRECTORY include/hypergraph_reorder
         DESTINATION include
         FILES_MATCHING PATTERN "*.hpp")
-
-# Export configuration
-install(EXPORT hypergraph_reorder-targets
-        FILE hypergraph_reorder-targets.cmake
-        NAMESPACE hypergraph_reorder::
-        DESTINATION lib/cmake/hypergraph_reorder)
-
-# Create package config file
-include(CMakePackageConfigHelpers)
-write_basic_package_version_file(
-    "${CMAKE_CURRENT_BINARY_DIR}/hypergraph_reorder-config-version.cmake"
-    VERSION ${PROJECT_VERSION}
-    COMPATIBILITY AnyNewerVersion
-)
-
-configure_package_config_file(
-    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/hypergraph_reorder-config.cmake.in"
-    "${CMAKE_CURRENT_BINARY_DIR}/hypergraph_reorder-config.cmake"
-    INSTALL_DESTINATION lib/cmake/hypergraph_reorder
-    NO_CHECK_REQUIRED_COMPONENTS_MACRO
-)
-
-install(FILES
-    "${CMAKE_CURRENT_BINARY_DIR}/hypergraph_reorder-config.cmake"
-    "${CMAKE_CURRENT_BINARY_DIR}/hypergraph_reorder-config-version.cmake"
-    DESTINATION lib/cmake/hypergraph_reorder)
 
 # Print configuration summary
 message(STATUS "")

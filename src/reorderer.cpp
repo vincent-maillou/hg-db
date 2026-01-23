@@ -9,9 +9,10 @@ namespace hypergraph_reorder {
     HypergraphPartitioner::Options part_opts;
     part_opts.n_parts = opts.n_parts;
     part_opts.imbalance = opts.imbalance;
-    part_opts.kahypar_config_path = opts.kahypar_config_path;
+    part_opts.preset = opts.preset;
     part_opts.seed = opts.seed;
-    part_opts.suppress_output = opts.suppress_kahypar_output;
+    part_opts.suppress_output = opts.suppress_partitioner_output;
+    part_opts.num_threads = opts.num_threads;
     partitioner_ = std::make_unique<HypergraphPartitioner>(part_opts);
 
     BlockOrderer::Options ord_opts;

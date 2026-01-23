@@ -22,7 +22,7 @@ public:
         // Partitioning options
         index_t n_parts;
         double imbalance;
-        std::string kahypar_config_path;
+        MtKahyparPreset preset;  // MT-KaHyPar preset (replaces config file)
         int seed;
 
         // Clique cover options
@@ -37,12 +37,12 @@ public:
         // Performance options
         bool use_openmp;
         int num_threads;
-        bool suppress_kahypar_output;
+        bool suppress_partitioner_output;
 
         Options()
             : n_parts(4),
               imbalance(0.03),
-              kahypar_config_path(""),
+              preset(MtKahyparPreset::DEFAULT),
               seed(-1),
               use_maximal_cliques(true),
               parallel_clique_finding(true),
@@ -50,8 +50,8 @@ public:
               ordering_method(OrderingMethod::AMD),
               parallel_block_ordering(true),
               use_openmp(true),
-              num_threads(-1),
-              suppress_kahypar_output(false) {}
+              num_threads(0),  // 0 = auto-detect
+              suppress_partitioner_output(false) {}
     };
 
     struct Result {
