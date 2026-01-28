@@ -56,16 +56,25 @@ add_subdirectory(external/mt-kahypar EXCLUDE_FROM_ALL)
 message(STATUS "MT-KaHyPar included from external/mt-kahypar")
 
 # Find SuiteSparse components
-find_library(AMD_LIBRARY amd REQUIRED)
-find_library(CHOLMOD_LIBRARY cholmod REQUIRED)
-find_library(CAMD_LIBRARY camd REQUIRED)
-find_library(COLAMD_LIBRARY colamd REQUIRED)
-find_library(SUITESPARSECONFIG_LIBRARY suitesparseconfig REQUIRED)
-find_library(CCOLAMD_LIBRARY ccolamd REQUIRED)
+# Allow specifying SUITESPARSE_ROOT or use environment's CONDA_PREFIX
+set(SUITESPARSE_HINT_PATHS
+    ${SUITESPARSE_ROOT}
+    $ENV{CONDA_PREFIX}
+    /usr/local
+    /usr
+)
+
+find_library(AMD_LIBRARY amd HINTS ${SUITESPARSE_HINT_PATHS} PATH_SUFFIXES lib lib64 REQUIRED)
+find_library(CHOLMOD_LIBRARY cholmod HINTS ${SUITESPARSE_HINT_PATHS} PATH_SUFFIXES lib lib64 REQUIRED)
+find_library(CAMD_LIBRARY camd HINTS ${SUITESPARSE_HINT_PATHS} PATH_SUFFIXES lib lib64 REQUIRED)
+find_library(COLAMD_LIBRARY colamd HINTS ${SUITESPARSE_HINT_PATHS} PATH_SUFFIXES lib lib64 REQUIRED)
+find_library(SUITESPARSECONFIG_LIBRARY suitesparseconfig HINTS ${SUITESPARSE_HINT_PATHS} PATH_SUFFIXES lib lib64 REQUIRED)
+find_library(CCOLAMD_LIBRARY ccolamd HINTS ${SUITESPARSE_HINT_PATHS} PATH_SUFFIXES lib lib64 REQUIRED)
 
 find_path(SUITESPARSE_INCLUDE_DIR
     NAMES amd.h cholmod.h
-    PATHS /usr/include/suitesparse /usr/local/include/suitesparse
+    HINTS ${SUITESPARSE_HINT_PATHS}
+    PATH_SUFFIXES include/suitesparse include
     REQUIRED)
 
 message(STATUS "SuiteSparse include: ${SUITESPARSE_INCLUDE_DIR}")
