@@ -574,6 +574,11 @@ def main():
         type=Path,
         help="Output CSV file for results"
     )
+    parser.add_argument(
+        "--download-only",
+        action="store_true",
+        help="Only download matrices (run on login node), skip tests"
+    )
 
     args = parser.parse_args()
 
@@ -583,6 +588,43 @@ def main():
     cmpfillin_path = project_root.parent / "cmpfillin" / "cmpfillin"
     workspace_path = project_root / "matrices"
     output_dir = project_root / "results"
+
+    workspace_path.mkdir(parents=True, exist_ok=True)
+
+    # Determine which matrices to test/download
+    if args.matrices:
+        # Specific matrices requested
+        matrices_to_test = {"Custom": args.matrices}
+    elif args.groups:
+        # Specific groups requested
+        matrices_to_test = {g: MATRICES[g] for g in args.groups}
+    else:
+        # All matrices
+        matrices_to_test = MATRICES
+
+    # Download-only mode: fetch all matrices and exit
+    if args.download_only:
+        print("=" * 60)
+        print("Download-only mode: fetching matrices")
+        print("=" * 60)
+        print(f"Workspace: {workspace_path}")
+
+        total = sum(len(v) for v in matrices_to_test.values())
+        failed = []
+        current = 0
+        for group, matrix_list in matrices_to_test.items():
+            print(f"\nGroup: {group}")
+            for matrix_name in matrix_list:
+                current += 1
+                path = fetch_matrix(matrix_name, workspace_path)
+                if path is None:
+                    failed.append(matrix_name)
+
+        print(f"\nDownloaded {total - len(failed)}/{total} matrices.")
+        if failed:
+            print(f"Failed: {', '.join(failed)}")
+            return 1
+        return 0
 
     # Verify CLI exists
     if not cli_path.exists():
@@ -597,19 +639,7 @@ def main():
         return 1
 
     # Create output directory
-    workspace_path.mkdir(parents=True, exist_ok=True)
     output_dir.mkdir(parents=True, exist_ok=True)
-
-    # Determine which matrices to test
-    if args.matrices:
-        # Specific matrices requested
-        matrices_to_test = {"Custom": args.matrices}
-    elif args.groups:
-        # Specific groups requested
-        matrices_to_test = {g: MATRICES[g] for g in args.groups}
-    else:
-        # All matrices
-        matrices_to_test = MATRICES
 
     print("=" * 60)
     print("Hypergraph Reordering Test Suite")
