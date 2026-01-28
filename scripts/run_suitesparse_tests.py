@@ -197,14 +197,7 @@ def fetch_matrix(matrix_name: str, workspace_path: Path) -> Optional[Path]:
 
         # Download using ssgetpy
         print(f"downloading...", end=" ", flush=True)
-        matrix_id = matrix_meta.id
-        fetched_list = ssgetpy.fetch(matrix_id)
-        if not hasattr(fetched_list, '__getitem__') or len(fetched_list) == 0:
-            print(f"FAILED: Fetch returned no results for id {matrix_id}")
-            return None
-
-        fetched_matrix = fetched_list[0]
-        downloaded = fetched_matrix.download()
+        downloaded = matrix_meta.download()
 
         # Resolve archive path from download result
         archive_path = None
