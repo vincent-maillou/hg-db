@@ -13,12 +13,14 @@ import subprocess
 import time
 import csv
 import argparse
-import urllib.request
 import tarfile
+import gzip
 import os
 from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Optional
+
+import ssgetpy
 
 
 # Test matrices organized by group
@@ -166,37 +168,92 @@ def fetch_matrix(matrix_name: str, workspace_path: Path) -> Optional[Path]:
         return cached
 
     try:
-        # Query SuiteSparse website to resolve the group name.
-        # Visiting https://sparse.tamu.edu/<Name> redirects to /<Group>/<Name>.
-        search_url = f"https://sparse.tamu.edu/{matrix_name}"
-        with urllib.request.urlopen(search_url) as response:
-            final_url = response.url
-            parts = final_url.rstrip('/').split('/')
-            group = parts[-2]
-            name = parts[-1]
+        # Search for the matrix using ssgetpy (case-insensitive exact match)
+        search_results = ssgetpy.search(matrix_name)
 
-        # Download the Matrix Market tar.gz
-        download_url = f"https://sparse.tamu.edu/MM/{group}/{name}.tar.gz"
-        tar_path = workspace_path / f"{name}.tar.gz"
+        matrix_meta = None
+        for m in search_results:
+            name = getattr(m, 'name', None) or getattr(m, 'Name', None)
+            if name and name.lower() == matrix_name.lower():
+                matrix_meta = m
+                break
 
+        if matrix_meta is None:
+            print(f"FAILED: Matrix '{matrix_name}' not found in SuiteSparse collection")
+            return None
+
+        group = getattr(matrix_meta, 'group', None) or getattr(matrix_meta, 'Group', None) or "unknown"
+        name = getattr(matrix_meta, 'name', None) or getattr(matrix_meta, 'Name', None) or matrix_name
+
+        # Build cache directory using group/name structure
+        cache_dir = workspace_path / str(group)
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        matrix_file = cache_dir / f"{name}" / f"{name}.mtx"
+
+        # Double-check cache with resolved path
+        if matrix_file.exists():
+            print(f"OK (cached)")
+            return matrix_file
+
+        # Download using ssgetpy
         print(f"downloading...", end=" ", flush=True)
-        urllib.request.urlretrieve(download_url, str(tar_path))
+        matrix_id = matrix_meta.id
+        fetched_list = ssgetpy.fetch(matrix_id)
+        if not hasattr(fetched_list, '__getitem__') or len(fetched_list) == 0:
+            print(f"FAILED: Fetch returned no results for id {matrix_id}")
+            return None
 
-        # Extract (tar contains <name>/<name>.mtx)
-        with tarfile.open(tar_path, 'r:gz') as tar:
-            tar.extractall(path=workspace_path)
+        fetched_matrix = fetched_list[0]
+        downloaded = fetched_matrix.download()
 
-        # Cleanup tar
-        tar_path.unlink(missing_ok=True)
+        # Resolve archive path from download result
+        archive_path = None
+        if isinstance(downloaded, (tuple, list)):
+            for item in reversed(downloaded):
+                if isinstance(item, str) and item.endswith('.tar.gz'):
+                    archive_path = item
+                    break
+            if archive_path is None:
+                for item in downloaded:
+                    if isinstance(item, str):
+                        archive_path = item
+                        break
+        elif isinstance(downloaded, str):
+            archive_path = downloaded
 
-        # Find the extracted .mtx file
-        found = _find_cached_mtx(matrix_name, workspace_path)
-        if found:
-            print(f"OK")
-            return found
+        if not archive_path or not Path(archive_path).exists():
+            print(f"FAILED: Could not download archive for '{name}'")
+            return None
 
-        print("WARN: Downloaded but .mtx not found")
-        return None
+        # Extract archive
+        with tarfile.open(archive_path, 'r:gz') as tar:
+            tar.extractall(path=cache_dir)
+
+        # Find .mtx file (could be plain or gzip-compressed)
+        mtx_path = None
+        mtx_gz_path = None
+        for p in cache_dir.rglob('*'):
+            if p.is_file():
+                if p.suffix.lower() == '.mtx' and '.gz' not in p.name.lower():
+                    mtx_path = p
+                    break
+                if p.name.lower().endswith('.mtx.gz'):
+                    mtx_gz_path = p
+
+        if mtx_path is None and mtx_gz_path is not None:
+            # Decompress .mtx.gz to .mtx
+            decompressed = mtx_gz_path.with_suffix('')  # removes .gz
+            with gzip.open(mtx_gz_path, 'rb') as f_in:
+                with open(decompressed, 'wb') as f_out:
+                    f_out.write(f_in.read())
+            mtx_path = decompressed
+
+        if mtx_path is None:
+            print("FAILED: No .mtx file found in archive")
+            return None
+
+        print(f"OK")
+        return mtx_path
 
     except Exception as e:
         print(f"FAILED: {e}")
