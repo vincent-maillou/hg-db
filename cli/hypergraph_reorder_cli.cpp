@@ -1,10 +1,22 @@
 #include "hypergraph_reorder/reorderer.hpp"
 #include <iostream>
+#include <fstream>
 #include <string>
 #include <iomanip>
 #include <cstring>
 
 using namespace hypergraph_reorder;
+
+void write_permutation(const std::string& filepath, const std::vector<index_t>& perm) {
+    std::ofstream file(filepath);
+    if (!file.is_open()) {
+        throw HypergraphReorderError("Cannot open file for writing: " + filepath);
+    }
+    for (auto v : perm) {
+        file << v << "\n";
+    }
+    file.close();
+}
 
 void print_usage(const char* prog_name) {
     std::cout << "Usage: " << prog_name << " <input_matrix> <k> [options]\n\n";
@@ -22,6 +34,8 @@ void print_usage(const char* prog_name) {
     std::cout << "                     Choices: default, quality, deterministic, large_k\n";
     std::cout << "  --threads <n>      Number of threads (default: auto-detect)\n";
     std::cout << "  --quiet            Suppress partitioner output\n";
+    std::cout << "  --output-perm      Output permutation file (<input>.perm)\n";
+    std::cout << "  --output-graph     Output METIS graph file (<input>.graph) for cmpfillin\n";
 }
 
 void print_statistics(const Statistics& stats) {
@@ -90,6 +104,8 @@ int main(int argc, char** argv) {
     MtKahyparPreset preset = MtKahyparPreset::DEFAULT;
     int num_threads = 0;  // 0 = auto-detect
     bool quiet = false;
+    bool output_perm = false;
+    bool output_graph = false;
 
     // Parse optional arguments
     for (int i = 3; i < argc; ++i) {
@@ -100,6 +116,10 @@ int main(int argc, char** argv) {
             num_threads = std::atoi(argv[++i]);
         } else if (arg == "--quiet") {
             quiet = true;
+        } else if (arg == "--output-perm") {
+            output_perm = true;
+        } else if (arg == "--output-graph") {
+            output_graph = true;
         } else if (arg == "-h" || arg == "--help") {
             print_usage(argv[0]);
             return 0;
@@ -128,13 +148,48 @@ int main(int argc, char** argv) {
     opts.num_threads = num_threads;
     opts.suppress_partitioner_output = quiet;
 
+    // Compute base path (without extension)
+    std::string base_path;
+    if (dot_pos != std::string::npos) {
+        base_path = input_path.substr(0, dot_pos);
+    } else {
+        base_path = input_path;
+    }
+
     try {
+        // Read original matrix first if we need to output graph
+        CSRMatrix original_matrix;
+        if (output_graph) {
+            original_matrix = read_matrix(input_path, MatrixFormat::AUTO);
+        }
+
         SymmetricDBReorderer reorderer(opts);
         auto result = reorderer.reorder_from_file(input_path, MatrixFormat::AUTO);
 
         std::cout << "\nSaving reordered matrix to " << output_path << std::endl;
         write_matrix(output_path, result.reordered_matrix);
         std::cout << "Matrix saved successfully" << std::endl;
+
+        // Output permutation file
+        if (output_perm) {
+            std::string perm_path = base_path + ".perm";
+            std::cout << "Saving permutation to " << perm_path << std::endl;
+            write_permutation(perm_path, result.permutation);
+        }
+
+        // Output METIS graph file for cmpfillin
+        if (output_graph) {
+            std::string graph_path = base_path + ".graph";
+            std::cout << "Saving METIS graph to " << graph_path << std::endl;
+            metis::write(graph_path, original_matrix);
+
+            // Also output permutation when outputting graph (needed for cmpfillin)
+            std::string perm_path = base_path + ".perm";
+            if (!output_perm) {
+                std::cout << "Saving permutation to " << perm_path << std::endl;
+                write_permutation(perm_path, result.permutation);
+            }
+        }
 
         print_statistics(result.stats);
 
