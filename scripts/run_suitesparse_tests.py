@@ -3,7 +3,7 @@
 Test script for running hypergraph reordering on SuiteSparse matrices.
 
 This script:
-1. Fetches matrices from the SuiteSparse collection
+1. Loads matrices from a local directory ($HPCVAULT/matrices or --matrix-dir)
 2. Runs the hypergraph_reorder CLI on each matrix
 3. Collects and reports timing statistics
 """
@@ -13,14 +13,10 @@ import subprocess
 import time
 import csv
 import argparse
-import tarfile
-import gzip
 import os
 from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Optional
-
-import ssgetpy
 
 
 # Test matrices organized by group
@@ -147,110 +143,13 @@ def run_cmpfillin(cmpfillin_path: Path, graph_path: Path, perm_path: Path, timeo
         return {}
 
 
-def _find_cached_mtx(matrix_name: str, workspace_path: Path) -> Optional[Path]:
-    """Find a cached .mtx file by name (case-insensitive)."""
-    for mtx_file in workspace_path.rglob(f"{matrix_name}.mtx"):
-        return mtx_file
-    for mtx_file in workspace_path.rglob("*.mtx"):
-        if mtx_file.stem.lower() == matrix_name.lower():
-            return mtx_file
-    return None
-
-
-def fetch_matrix(matrix_name: str, workspace_path: Path) -> Optional[Path]:
-    """Fetch a matrix from SuiteSparse and return the path to the .mtx file."""
-    print(f"  Fetching {matrix_name}...", end=" ", flush=True)
-
-    # Check if already cached
-    cached = _find_cached_mtx(matrix_name, workspace_path)
-    if cached:
-        print(f"OK (cached)")
-        return cached
-
-    try:
-        # Search for the matrix using ssgetpy (case-insensitive exact match)
-        search_results = ssgetpy.search(matrix_name)
-
-        matrix_meta = None
-        for m in search_results:
-            name = getattr(m, 'name', None) or getattr(m, 'Name', None)
-            if name and name.lower() == matrix_name.lower():
-                matrix_meta = m
-                break
-
-        if matrix_meta is None:
-            print(f"FAILED: Matrix '{matrix_name}' not found in SuiteSparse collection")
-            return None
-
-        group = getattr(matrix_meta, 'group', None) or getattr(matrix_meta, 'Group', None) or "unknown"
-        name = getattr(matrix_meta, 'name', None) or getattr(matrix_meta, 'Name', None) or matrix_name
-
-        # Build cache directory using group/name structure
-        cache_dir = workspace_path / str(group)
-        cache_dir.mkdir(parents=True, exist_ok=True)
-        matrix_file = cache_dir / f"{name}" / f"{name}.mtx"
-
-        # Double-check cache with resolved path
-        if matrix_file.exists():
-            print(f"OK (cached)")
-            return matrix_file
-
-        # Download using ssgetpy
-        print(f"downloading...", end=" ", flush=True)
-        downloaded = matrix_meta.download()
-
-        # Resolve archive path from download result
-        archive_path = None
-        if isinstance(downloaded, (tuple, list)):
-            for item in reversed(downloaded):
-                if isinstance(item, str) and item.endswith('.tar.gz'):
-                    archive_path = item
-                    break
-            if archive_path is None:
-                for item in downloaded:
-                    if isinstance(item, str):
-                        archive_path = item
-                        break
-        elif isinstance(downloaded, str):
-            archive_path = downloaded
-
-        if not archive_path or not Path(archive_path).exists():
-            print(f"FAILED: Could not download archive for '{name}'")
-            return None
-
-        # Extract archive
-        with tarfile.open(archive_path, 'r:gz') as tar:
-            tar.extractall(path=cache_dir)
-
-        # Find .mtx file (could be plain or gzip-compressed)
-        mtx_path = None
-        mtx_gz_path = None
-        for p in cache_dir.rglob('*'):
-            if p.is_file():
-                if p.suffix.lower() == '.mtx' and '.gz' not in p.name.lower():
-                    mtx_path = p
-                    break
-                if p.name.lower().endswith('.mtx.gz'):
-                    mtx_gz_path = p
-
-        if mtx_path is None and mtx_gz_path is not None:
-            # Decompress .mtx.gz to .mtx
-            decompressed = mtx_gz_path.with_suffix('')  # removes .gz
-            with gzip.open(mtx_gz_path, 'rb') as f_in:
-                with open(decompressed, 'wb') as f_out:
-                    f_out.write(f_in.read())
-            mtx_path = decompressed
-
-        if mtx_path is None:
-            print("FAILED: No .mtx file found in archive")
-            return None
-
-        print(f"OK")
+def find_matrix(matrix_name: str, matrix_dir: Path) -> Optional[Path]:
+    """Find a matrix .mtx file in the local matrix directory."""
+    mtx_path = matrix_dir / f"{matrix_name}.mtx"
+    if mtx_path.exists():
         return mtx_path
-
-    except Exception as e:
-        print(f"FAILED: {e}")
-        return None
+    print(f"  ERROR: {mtx_path} not found")
+    return None
 
 
 def run_reorder(
@@ -344,7 +243,7 @@ def parse_statistics(output: str) -> dict:
 
 def run_tests(
     matrices: dict[str, list[str]],
-    workspace_path: Path,
+    matrix_dir: Path,
     cli_path: Path,
     cmpfillin_path: Path,
     output_dir: Path,
@@ -379,10 +278,10 @@ def run_tests(
                 preset=preset,
             )
 
-            # Fetch matrix
-            matrix_path = fetch_matrix(matrix_name, workspace_path)
+            # Find matrix
+            matrix_path = find_matrix(matrix_name, matrix_dir)
             if matrix_path is None:
-                result.error_message = "Failed to fetch matrix"
+                result.error_message = "Matrix file not found"
                 results.append(result)
                 continue
 
@@ -568,9 +467,10 @@ def main():
         help="Output CSV file for results"
     )
     parser.add_argument(
-        "--download-only",
-        action="store_true",
-        help="Only download matrices (run on login node), skip tests"
+        "--matrix-dir",
+        type=Path,
+        default=Path(os.environ.get("HPCVAULT", ""), "matrices"),
+        help="Directory containing .mtx files (default: $HPCVAULT/matrices)"
     )
 
     args = parser.parse_args()
@@ -579,12 +479,16 @@ def main():
     project_root = Path(__file__).resolve().parent.parent
     cli_path = project_root / "build" / "hypergraph_reorder"
     cmpfillin_path = project_root.parent / "cmpfillin" / "cmpfillin"
-    workspace_path = project_root / "matrices"
+    matrix_dir = args.matrix_dir
     output_dir = project_root / "results"
 
-    workspace_path.mkdir(parents=True, exist_ok=True)
+    # Verify matrix directory exists
+    if not matrix_dir.is_dir():
+        print(f"Error: Matrix directory not found at {matrix_dir}")
+        print("Set $HPCVAULT or use --matrix-dir")
+        return 1
 
-    # Determine which matrices to test/download
+    # Determine which matrices to test
     if args.matrices:
         # Specific matrices requested
         matrices_to_test = {"Custom": args.matrices}
@@ -594,30 +498,6 @@ def main():
     else:
         # All matrices
         matrices_to_test = MATRICES
-
-    # Download-only mode: fetch all matrices and exit
-    if args.download_only:
-        print("=" * 60)
-        print("Download-only mode: fetching matrices")
-        print("=" * 60)
-        print(f"Workspace: {workspace_path}")
-
-        total = sum(len(v) for v in matrices_to_test.values())
-        failed = []
-        current = 0
-        for group, matrix_list in matrices_to_test.items():
-            print(f"\nGroup: {group}")
-            for matrix_name in matrix_list:
-                current += 1
-                path = fetch_matrix(matrix_name, workspace_path)
-                if path is None:
-                    failed.append(matrix_name)
-
-        print(f"\nDownloaded {total - len(failed)}/{total} matrices.")
-        if failed:
-            print(f"Failed: {', '.join(failed)}")
-            return 1
-        return 0
 
     # Verify CLI exists
     if not cli_path.exists():
@@ -639,7 +519,7 @@ def main():
     print("=" * 60)
     print(f"CLI: {cli_path}")
     print(f"cmpfillin: {cmpfillin_path}")
-    print(f"Workspace: {workspace_path}")
+    print(f"Matrix dir: {matrix_dir}")
     print(f"Parameters: k={args.n_parts}, preset={args.preset}, threads={args.threads or 'auto'}")
 
     # Run tests for each k value
@@ -651,7 +531,7 @@ def main():
 
         results = run_tests(
             matrices=matrices_to_test,
-            workspace_path=workspace_path,
+            matrix_dir=matrix_dir,
             cli_path=cli_path,
             cmpfillin_path=cmpfillin_path,
             output_dir=output_dir,
