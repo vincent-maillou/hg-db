@@ -13,14 +13,12 @@ import subprocess
 import time
 import csv
 import argparse
+import urllib.request
+import tarfile
+import os
 from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Optional
-
-# Add SolverBench to path
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "SolverBench" / "src"))
-
-from solverbench.sparse_utils import get_suite_sparse_matrix
 
 
 # Test matrices organized by group
@@ -147,25 +145,57 @@ def run_cmpfillin(cmpfillin_path: Path, graph_path: Path, perm_path: Path, timeo
         return {}
 
 
+def _find_cached_mtx(matrix_name: str, workspace_path: Path) -> Optional[Path]:
+    """Find a cached .mtx file by name (case-insensitive)."""
+    for mtx_file in workspace_path.rglob(f"{matrix_name}.mtx"):
+        return mtx_file
+    for mtx_file in workspace_path.rglob("*.mtx"):
+        if mtx_file.stem.lower() == matrix_name.lower():
+            return mtx_file
+    return None
+
+
 def fetch_matrix(matrix_name: str, workspace_path: Path) -> Optional[Path]:
     """Fetch a matrix from SuiteSparse and return the path to the .mtx file."""
     print(f"  Fetching {matrix_name}...", end=" ", flush=True)
+
+    # Check if already cached
+    cached = _find_cached_mtx(matrix_name, workspace_path)
+    if cached:
+        print(f"OK (cached)")
+        return cached
+
     try:
-        # Fetch the matrix (this will cache it locally)
-        matrix = get_suite_sparse_matrix(matrix_name, workspace_path=str(workspace_path))
+        # Query SuiteSparse website to resolve the group name.
+        # Visiting https://sparse.tamu.edu/<Name> redirects to /<Group>/<Name>.
+        search_url = f"https://sparse.tamu.edu/{matrix_name}"
+        with urllib.request.urlopen(search_url) as response:
+            final_url = response.url
+            parts = final_url.rstrip('/').split('/')
+            group = parts[-2]
+            name = parts[-1]
 
-        # Find the cached .mtx file
-        for mtx_file in workspace_path.rglob(f"{matrix_name}.mtx"):
-            print(f"OK ({matrix.shape[0]}x{matrix.shape[1]}, {matrix.nnz} nnz)")
-            return mtx_file
+        # Download the Matrix Market tar.gz
+        download_url = f"https://sparse.tamu.edu/MM/{group}/{name}.tar.gz"
+        tar_path = workspace_path / f"{name}.tar.gz"
 
-        # Fallback: case-insensitive search
-        for mtx_file in workspace_path.rglob("*.mtx"):
-            if mtx_file.stem.lower() == matrix_name.lower():
-                print(f"OK ({matrix.shape[0]}x{matrix.shape[1]}, {matrix.nnz} nnz)")
-                return mtx_file
+        print(f"downloading...", end=" ", flush=True)
+        urllib.request.urlretrieve(download_url, str(tar_path))
 
-        print("WARN: Matrix fetched but file not found")
+        # Extract (tar contains <name>/<name>.mtx)
+        with tarfile.open(tar_path, 'r:gz') as tar:
+            tar.extractall(path=workspace_path)
+
+        # Cleanup tar
+        tar_path.unlink(missing_ok=True)
+
+        # Find the extracted .mtx file
+        found = _find_cached_mtx(matrix_name, workspace_path)
+        if found:
+            print(f"OK")
+            return found
+
+        print("WARN: Downloaded but .mtx not found")
         return None
 
     except Exception as e:
