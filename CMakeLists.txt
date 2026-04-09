@@ -32,7 +32,7 @@ if(USE_OPENMP)
     find_package(OpenMP)
 endif()
 
-# MT-KaHyPar (v1.5.3, pinned submodule)
+# MT-KaHyPar (master branch, no Boost dependency)
 # On HPC pass -DKAHYPAR_DOWNLOAD_TBB=ON if TBB is not available system-wide
 set(KAHYPAR_PYTHON OFF CACHE BOOL "" FORCE)
 set(KAHYPAR_ENABLE_HIGHEST_QUALITY_PRESET ON CACHE BOOL "" FORCE)
