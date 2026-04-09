@@ -1,4 +1,0 @@
-@PACKAGE_INIT@
-
-include("${CMAKE_CURRENT_LIST_DIR}/hypergraph_reorder-targets.cmake")
-check_required_components(hypergraph_reorder)
