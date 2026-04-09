@@ -3,204 +3,136 @@
 #include <fstream>
 #include <string>
 #include <iomanip>
-#include <cstring>
 
 using namespace hypergraph_reorder;
 
-void write_permutation(const std::string& filepath, const std::vector<index_t>& perm) {
-    std::ofstream file(filepath);
-    if (!file.is_open()) {
-        throw HypergraphReorderError("Cannot open file for writing: " + filepath);
-    }
-    for (auto v : perm) {
-        file << v << "\n";
-    }
-    file.close();
+// Returns path without its extension, e.g. "/foo/bar.mtx" -> "/foo/bar"
+static std::string stem(const std::string& path) {
+    auto dot = path.find_last_of('.');
+    return dot != std::string::npos ? path.substr(0, dot) : path;
 }
 
-void print_usage(const char* prog_name) {
-    std::cout << "Usage: " << prog_name << " <input_matrix> <k> [options]\n\n";
-    std::cout << "Arguments:\n";
-    std::cout << "  <input_matrix>     Input matrix file (format auto-detected)\n";
-    std::cout << "  <k>                Number of diagonal blocks/parts\n\n";
-    std::cout << "Supported formats:\n";
-    std::cout << "  .mtx    - Matrix Market format\n";
-    std::cout << "  .graph  - METIS graph format\n";
-    std::cout << "  other   - Binary CSR format (auto-detected)\n\n";
-    std::cout << "Output: <input>_reordered.mtx\n\n";
-    std::cout << "Options:\n";
-    std::cout << "  -h, --help         Show this help message\n";
-    std::cout << "  --preset <name>    MT-KaHyPar preset (default: default)\n";
-    std::cout << "                     Choices: default, quality, deterministic, large_k\n";
-    std::cout << "  --threads <n>      Number of threads (default: auto-detect)\n";
-    std::cout << "  --quiet            Suppress partitioner output\n";
-    std::cout << "  --output-perm      Output permutation file (<input>.perm)\n";
-    std::cout << "  --output-graph     Output METIS graph file (<input>.graph) for cmpfillin\n";
+static void write_permutation(const std::string& path, const std::vector<index_t>& perm) {
+    std::ofstream f(path);
+    if (!f) throw HypergraphReorderError("Cannot open file for writing: " + path);
+    for (auto v : perm) f << v << "\n";
 }
 
-void print_statistics(const Statistics& stats) {
-    std::cout << "\n========================================\n";
-    std::cout << "Statistics\n";
-    std::cout << "========================================\n";
-    std::cout << "Matrix: " << stats.n_rows << " x " << stats.n_cols
-              << ", " << stats.nnz << " nonzeros\n";
-    std::cout << "Graph: " << stats.n_vertices << " vertices, "
-              << stats.n_edges << " edges\n";
-    std::cout << "Clique cover: " << stats.n_cliques << " cliques "
-              << "(max: " << stats.max_clique_size
-              << ", avg: " << std::fixed << std::setprecision(1) << stats.avg_clique_size << ")\n";
-    std::cout << "Hypergraph: " << stats.n_hypernodes << " nodes, "
-              << stats.n_hyperedges << " nets, " << stats.total_pins << " pins\n";
-    std::cout << "Partition: " << stats.n_parts << " parts, separator size: "
-              << stats.separator_size << " (" << std::fixed << std::setprecision(2)
-              << (stats.separator_ratio * 100) << "%)\n";
-    std::cout << "Ordering: " << stats.blocks_ordered << " blocks ordered ("
-              << stats.blocks_failed << " failed)\n";
-    std::cout << "\nTotal time: " << std::fixed << std::setprecision(2)
-              << stats.time_total_ms << " ms\n";
+static void print_usage(const char* prog) {
+    std::cout <<
+        "Usage: " << prog << " <input_matrix> <k> [options]\n\n"
+        "Arguments:\n"
+        "  <input_matrix>   Input matrix file (.mtx, .graph, or binary CSR)\n"
+        "  <k>              Number of diagonal blocks/parts\n\n"
+        "Options:\n"
+        "  -h, --help           Show this help message\n"
+        "  --preset <name>      MT-KaHyPar preset: default, quality, deterministic, large_k\n"
+        "  --threads <n>        Number of threads (default: auto)\n"
+        "  --quiet              Suppress partitioner output\n"
+        "  --output-perm        Write permutation to <input>.perm\n"
+        "  --output-graph       Write METIS graph to <input>.graph\n";
 }
 
-MtKahyparPreset parse_preset(const std::string& preset_str) {
-    if (preset_str == "quality") {
-        return MtKahyparPreset::QUALITY;
-    } else if (preset_str == "deterministic") {
-        return MtKahyparPreset::DETERMINISTIC;
-    } else if (preset_str == "large_k") {
-        return MtKahyparPreset::LARGE_K;
-    } else if (preset_str == "default") {
-        return MtKahyparPreset::DEFAULT;
-    } else {
-        std::cerr << "Warning: Unknown preset '" << preset_str << "', using default\n";
-        return MtKahyparPreset::DEFAULT;
-    }
+static void print_statistics(const Statistics& s) {
+    std::cout << "\n=== Statistics ===\n"
+              << "Matrix:     " << s.n_rows << " x " << s.n_cols << ", " << s.nnz << " nnz\n"
+              << "Graph:      " << s.n_vertices << " vertices, " << s.n_edges << " edges\n"
+              << "Cliques:    " << s.n_cliques
+              << " (max " << s.max_clique_size
+              << ", avg " << std::fixed << std::setprecision(1) << s.avg_clique_size << ")\n"
+              << "Hypergraph: " << s.n_hypernodes << " nodes, "
+              << s.n_hyperedges << " nets, " << s.total_pins << " pins\n"
+              << "Partition:  " << s.n_parts << " parts, separator "
+              << s.separator_size << " (" << std::setprecision(2)
+              << (s.separator_ratio * 100) << "%)\n"
+              << "Ordering:   " << s.blocks_ordered << " blocks ("
+              << s.blocks_failed << " failed)\n"
+              << "Time:       " << s.time_total_ms << " ms\n";
+}
+
+static MtKahyparPreset parse_preset(const std::string& s) {
+    if (s == "quality")       return MtKahyparPreset::QUALITY;
+    if (s == "deterministic") return MtKahyparPreset::DETERMINISTIC;
+    if (s == "large_k")       return MtKahyparPreset::LARGE_K;
+    if (s != "default")
+        std::cerr << "Warning: unknown preset '" << s << "', using default\n";
+    return MtKahyparPreset::DEFAULT;
 }
 
 int main(int argc, char** argv) {
-    if (argc < 2) {
+    if (argc < 2 || std::string(argv[1]) == "-h" || std::string(argv[1]) == "--help") {
         print_usage(argv[0]);
-        return 1;
+        return argc < 2 ? 1 : 0;
     }
-
-    if (argc == 2 && (std::string(argv[1]) == "-h" || std::string(argv[1]) == "--help")) {
-        print_usage(argv[0]);
-        return 0;
-    }
-
     if (argc < 3) {
-        std::cerr << "Error: Expected at least 2 arguments\n\n";
+        std::cerr << "Error: expected <input_matrix> and <k>\n\n";
         print_usage(argv[0]);
         return 1;
     }
 
-    std::string input_path = argv[1];
-    int n_parts = std::atoi(argv[2]);
+    const std::string input_path = argv[1];
+    const int n_parts = std::atoi(argv[2]);
+    if (n_parts < 2) { std::cerr << "Error: k must be >= 2\n"; return 1; }
 
-    if (n_parts < 2) {
-        std::cerr << "Error: Number of parts must be >= 2\n";
-        return 1;
-    }
+    const std::string base = stem(input_path);
+    const std::string output_path = base + "_reordered.mtx";
 
-    // Default options
     MtKahyparPreset preset = MtKahyparPreset::DEFAULT;
-    int num_threads = 0;  // 0 = auto-detect
-    bool quiet = false;
-    bool output_perm = false;
+    int  num_threads  = 0;
+    bool quiet        = false;
+    bool output_perm  = false;
     bool output_graph = false;
 
-    // Parse optional arguments
     for (int i = 3; i < argc; ++i) {
         std::string arg = argv[i];
-        if (arg == "--preset" && i + 1 < argc) {
-            preset = parse_preset(argv[++i]);
-        } else if (arg == "--threads" && i + 1 < argc) {
-            num_threads = std::atoi(argv[++i]);
-        } else if (arg == "--quiet") {
-            quiet = true;
-        } else if (arg == "--output-perm") {
-            output_perm = true;
-        } else if (arg == "--output-graph") {
-            output_graph = true;
-        } else if (arg == "-h" || arg == "--help") {
-            print_usage(argv[0]);
-            return 0;
-        } else {
-            std::cerr << "Error: Unknown option '" << arg << "'\n\n";
-            print_usage(argv[0]);
-            return 1;
-        }
-    }
-
-    size_t dot_pos = input_path.find_last_of('.');
-    std::string output_path;
-    if (dot_pos != std::string::npos) {
-        output_path = input_path.substr(0, dot_pos) + "_reordered.mtx";
-    } else {
-        output_path = input_path + "_reordered.mtx";
+        if      (arg == "--preset"  && i+1 < argc) preset      = parse_preset(argv[++i]);
+        else if (arg == "--threads" && i+1 < argc) num_threads = std::atoi(argv[++i]);
+        else if (arg == "--quiet")                 quiet        = true;
+        else if (arg == "--output-perm")           output_perm  = true;
+        else if (arg == "--output-graph")          output_graph = true;
+        else if (arg == "-h" || arg == "--help") { print_usage(argv[0]); return 0; }
+        else { std::cerr << "Error: unknown option '" << arg << "'\n\n"; print_usage(argv[0]); return 1; }
     }
 
     SymmetricDBReorderer::Options opts;
-    opts.n_parts = n_parts;
-    opts.imbalance = 0.03;
-    opts.preset = preset;
-    opts.seed = -1;
-    opts.ordering_method = OrderingMethod::AMD;
-    opts.use_openmp = true;
-    opts.num_threads = num_threads;
+    opts.n_parts                    = n_parts;
+    opts.imbalance                  = 0.03;
+    opts.preset                     = preset;
+    opts.seed                       = -1;
+    opts.ordering_method            = OrderingMethod::AMD;
+    opts.use_openmp                 = true;
+    opts.num_threads                = num_threads;
     opts.suppress_partitioner_output = quiet;
 
-    // Compute base path (without extension)
-    std::string base_path;
-    if (dot_pos != std::string::npos) {
-        base_path = input_path.substr(0, dot_pos);
-    } else {
-        base_path = input_path;
-    }
-
     try {
-        // Read original matrix first if we need to output graph
         CSRMatrix original_matrix;
-        if (output_graph) {
+        if (output_graph)
             original_matrix = read_matrix(input_path, MatrixFormat::AUTO);
-        }
 
         SymmetricDBReorderer reorderer(opts);
         auto result = reorderer.reorder_from_file(input_path, MatrixFormat::AUTO);
 
-        std::cout << "\nSaving reordered matrix to " << output_path << std::endl;
+        std::cout << "Saving reordered matrix to " << output_path << "\n";
         write_matrix(output_path, result.reordered_matrix);
-        std::cout << "Matrix saved successfully" << std::endl;
 
-        // Output permutation file
-        if (output_perm) {
-            std::string perm_path = base_path + ".perm";
-            std::cout << "Saving permutation to " << perm_path << std::endl;
+        if (output_perm || output_graph) {
+            std::string perm_path = base + ".perm";
+            std::cout << "Saving permutation to " << perm_path << "\n";
             write_permutation(perm_path, result.permutation);
         }
 
-        // Output METIS graph file for cmpfillin
         if (output_graph) {
-            std::string graph_path = base_path + ".graph";
-            std::cout << "Saving METIS graph to " << graph_path << std::endl;
+            std::string graph_path = base + ".graph";
+            std::cout << "Saving METIS graph to " << graph_path << "\n";
             metis::write(graph_path, original_matrix);
-
-            // Also output permutation when outputting graph (needed for cmpfillin)
-            std::string perm_path = base_path + ".perm";
-            if (!output_perm) {
-                std::cout << "Saving permutation to " << perm_path << std::endl;
-                write_permutation(perm_path, result.permutation);
-            }
         }
 
         print_statistics(result.stats);
-
-        std::cout << "\n========================================\n";
-        std::cout << "Reordering completed successfully!\n";
-        std::cout << "========================================\n";
-
+        std::cout << "\nDone.\n";
         return 0;
 
     } catch (const std::exception& e) {
-        std::cerr << "\nError: " << e.what() << std::endl;
+        std::cerr << "Error: " << e.what() << "\n";
         return 1;
     }
 }
