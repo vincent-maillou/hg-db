@@ -12,6 +12,7 @@
 
 ```bash
 git clone --recurse-submodules https://github.com/ohcomely/hypergraph-reordering.git
+cd hypergraph-reordering/
 mkdir build && cd build
 cmake ..
 make -j$(nproc)
