@@ -243,6 +243,7 @@ VertexPartition HypergraphPartitioner::create_vertex_partition(
   }
   std::sort(result.separator.begin(), result.separator.end());
 
+  // TODO: Have to somehow output part sizes
   std::cout << "Vertex partition completed:" << std::endl;
   std::cout << "  Part sizes: ";
   for (const auto& part : result.parts) {

@@ -16,7 +16,7 @@ struct hgr_result_s {
 };
 
 // Create reorderer
-extern "C" hgr_reorderer_t *hgr_create(const hgr_options_t *opts) {
+extern "C" hgr_reorderer_t* hgr_create(const hgr_options_t* opts) {
   try {
     SymmetricDBReorderer::Options cpp_opts;
 
@@ -73,7 +73,7 @@ extern "C" hgr_reorderer_t *hgr_create(const hgr_options_t *opts) {
       }
     }
 
-    auto *handle = new hgr_reorderer_t();
+    auto* handle = new hgr_reorderer_t();
     handle->reorderer = std::make_unique<SymmetricDBReorderer>(cpp_opts);
     return handle;
   } catch (...) {
@@ -81,9 +81,9 @@ extern "C" hgr_reorderer_t *hgr_create(const hgr_options_t *opts) {
   }
 }
 
-extern "C" void hgr_free(hgr_reorderer_t *reorderer) { delete reorderer; }
+extern "C" void hgr_free(hgr_reorderer_t* reorderer) { delete reorderer; }
 
-extern "C" void hgr_default_options(hgr_options_t *opts) {
+extern "C" void hgr_default_options(hgr_options_t* opts) {
   if (!opts) return;
 
   opts->n_parts = 4;
@@ -97,10 +97,10 @@ extern "C" void hgr_default_options(hgr_options_t *opts) {
   opts->suppress_output = 0;
 }
 
-extern "C" int hgr_reorder_file(hgr_reorderer_t *reorderer,
-                                const char *input_path,
+extern "C" int hgr_reorder_file(hgr_reorderer_t* reorderer,
+                                const char* input_path,
                                 hgr_matrix_format_t format,
-                                hgr_result_t **result) {
+                                hgr_result_t** result) {
   if (!reorderer || !input_path || !result) return -1;
 
   try {
@@ -126,7 +126,7 @@ extern "C" int hgr_reorder_file(hgr_reorderer_t *reorderer,
         reorderer->reorderer->reorder_from_file(input_path, cpp_format);
 
     // Create result handle
-    auto *res = new hgr_result_t();
+    auto* res = new hgr_result_t();
     res->result = std::move(cpp_result);
     *result = res;
 
@@ -136,10 +136,10 @@ extern "C" int hgr_reorder_file(hgr_reorderer_t *reorderer,
   }
 }
 
-extern "C" int hgr_reorder_csr(hgr_reorderer_t *reorderer, int64_t n_rows,
-                               int64_t nnz, const int64_t *row_ptr,
-                               const int64_t *col_idx, const double *values,
-                               hgr_result_t **result) {
+extern "C" int hgr_reorder_csr(hgr_reorderer_t* reorderer, int64_t n_rows,
+                               int64_t nnz, const int64_t* row_ptr,
+                               const int64_t* col_idx, const double* values,
+                               hgr_result_t** result) {
   if (!reorderer || !row_ptr || !col_idx || !result) return -1;
 
   try {
@@ -159,7 +159,7 @@ extern "C" int hgr_reorder_csr(hgr_reorderer_t *reorderer, int64_t n_rows,
     auto cpp_result = reorderer->reorderer->reorder(matrix);
 
     // Create result handle
-    auto *res = new hgr_result_t();
+    auto* res = new hgr_result_t();
     res->result = std::move(cpp_result);
     *result = res;
 
@@ -169,8 +169,8 @@ extern "C" int hgr_reorder_csr(hgr_reorderer_t *reorderer, int64_t n_rows,
   }
 }
 
-extern "C" int hgr_get_permutation(hgr_result_t *result,
-                                   const int64_t **permutation, int64_t *n) {
+extern "C" int hgr_get_permutation(hgr_result_t* result,
+                                   const int64_t** permutation, int64_t* n) {
   if (!result || !permutation || !n) return -1;
 
   try {
@@ -182,10 +182,10 @@ extern "C" int hgr_get_permutation(hgr_result_t *result,
   }
 }
 
-extern "C" int hgr_get_reordered_matrix(hgr_result_t *result, int64_t *n_rows,
-                                        int64_t *nnz, const int64_t **row_ptr,
-                                        const int64_t **col_idx,
-                                        const double **values) {
+extern "C" int hgr_get_reordered_matrix(hgr_result_t* result, int64_t* n_rows,
+                                        int64_t* nnz, const int64_t** row_ptr,
+                                        const int64_t** col_idx,
+                                        const double** values) {
   if (!result || !n_rows || !nnz || !row_ptr || !col_idx) return -1;
 
   try {
@@ -208,7 +208,7 @@ extern "C" int hgr_get_reordered_matrix(hgr_result_t *result, int64_t *n_rows,
   }
 }
 
-extern "C" int hgr_save_matrix(hgr_result_t *result, const char *output_path,
+extern "C" int hgr_save_matrix(hgr_result_t* result, const char* output_path,
                                hgr_matrix_format_t format) {
   if (!result || !output_path) return -1;
 
@@ -236,8 +236,8 @@ extern "C" int hgr_save_matrix(hgr_result_t *result, const char *output_path,
   }
 }
 
-extern "C" int hgr_get_statistics(hgr_result_t *result,
-                                  hgr_statistics_t *stats) {
+extern "C" int hgr_get_statistics(hgr_result_t* result,
+                                  hgr_statistics_t* stats) {
   if (!result || !stats) return -1;
 
   try {
@@ -257,4 +257,19 @@ extern "C" int hgr_get_statistics(hgr_result_t *result,
   }
 }
 
-extern "C" void hgr_result_free(hgr_result_t *result) { delete result; }
+extern "C" int hgr_get_part_sizes(hgr_result_t* result,
+                                  const int64_t** part_sizes, int64_t* n,
+                                  int64_t* separator) {
+  if (!result || !part_sizes || !n) return -1;
+
+  try {
+    *part_sizes = result->result.stats.part_sizes.data();
+    *separator = result->result.stats.separator_size;
+    *n = result->result.stats.part_sizes.size();
+    return 0;
+  } catch (...) {
+    return -1;
+  }
+}
+
+extern "C" void hgr_result_free(hgr_result_t* result) { delete result; }
