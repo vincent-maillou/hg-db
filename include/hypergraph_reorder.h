@@ -103,10 +103,10 @@ int hgr_get_statistics(hgr_result_t* result, hgr_statistics_t* stats);
    Sets *part_sizes to an array of n_parts sizes (vertices per block),
    and *n to the number of parts. The pointer is valid until hgr_result_free. */
 int hgr_get_part_sizes(hgr_result_t* result, const int64_t** part_sizes,
-                       int64_t* n, int64_t* separator)
+                       int64_t* n, int64_t* separator);
 
-    /* Free result */
-    void hgr_result_free(hgr_result_t* result);
+/* Free result */
+void hgr_result_free(hgr_result_t* result);
 
 #ifdef __cplusplus
 }
