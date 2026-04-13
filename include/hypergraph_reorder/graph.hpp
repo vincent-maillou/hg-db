@@ -1,48 +1,46 @@
 #ifndef HYPERGRAPH_REORDER_GRAPH_HPP
 #define HYPERGRAPH_REORDER_GRAPH_HPP
 
-#include "types.hpp"
-#include "sparse_matrix.hpp"
-#include <vector>
 #include <span>
+#include <vector>
 
-namespace hypergraph_reorder
-{
-    class Graph
-    {
-    public:
-        Graph();
+#include "sparse_matrix.hpp"
+#include "types.hpp"
 
-        explicit Graph(index_t n_vertices);
+namespace hypergraph_reorder {
+class Graph {
+ public:
+  Graph();
 
-        Graph(index_t n_vertices, index_t n_edges,
-              std::vector<index_t> adj_ptr,
-              std::vector<index_t> adj_list);
+  explicit Graph(index_t n_vertices);
 
-        index_t n_vertices() const { return n_vertices_; }
-        index_t n_edges() const { return n_edges_; }
+  Graph(index_t n_vertices, index_t n_edges, std::vector<index_t> adj_ptr,
+        std::vector<index_t> adj_list);
 
-        std::span<const index_t> neighbors(index_t v) const;
-        index_t degree(index_t v) const;
-        bool has_edge(index_t u, index_t v) const;
+  index_t n_vertices() const { return n_vertices_; }
+  index_t n_edges() const { return n_edges_; }
 
-        const std::vector<index_t> &adj_ptr() const { return adj_ptr_; }
-        const std::vector<index_t> &adj_list() const { return adj_list_; }
+  std::span<const index_t> neighbors(index_t v) const;
+  index_t degree(index_t v) const;
+  bool has_edge(index_t u, index_t v) const;
 
-        static Graph from_symmetric_matrix(const CSRMatrix &matrix);
+  const std::vector<index_t> &adj_ptr() const { return adj_ptr_; }
+  const std::vector<index_t> &adj_list() const { return adj_list_; }
 
-        bool validate() const;
-        std::vector<index_t> compute_degeneracy_ordering() const;
-        Graph induced_subgraph(const std::vector<index_t> &vertices) const;
+  static Graph from_symmetric_matrix(const CSRMatrix &matrix);
 
-    private:
-        index_t n_vertices_;
-        index_t n_edges_;
+  bool validate() const;
+  std::vector<index_t> compute_degeneracy_ordering() const;
+  Graph induced_subgraph(const std::vector<index_t> &vertices) const;
 
-        std::vector<index_t> adj_ptr_;
-        std::vector<index_t> adj_list_;
-    };
+ private:
+  index_t n_vertices_;
+  index_t n_edges_;
 
-} // namespace hypergraph_reorder
+  std::vector<index_t> adj_ptr_;
+  std::vector<index_t> adj_list_;
+};
 
-#endif // HYPERGRAPH_REORDER_GRAPH_HPP
+}  // namespace hypergraph_reorder
+
+#endif  // HYPERGRAPH_REORDER_GRAPH_HPP
