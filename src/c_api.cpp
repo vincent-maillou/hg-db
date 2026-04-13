@@ -31,6 +31,7 @@ extern "C" hgr_reorderer_t *hgr_create(const hgr_options_t *opts)
             cpp_opts.use_openmp = opts->use_openmp != 0;
             cpp_opts.num_threads = opts->num_threads;
             cpp_opts.suppress_partitioner_output = opts->suppress_partitioner_output != 0;
+            cpp_opts.suppress_output = opts->suppress_output != 0;
 
             // Convert preset
             switch (opts->preset)
@@ -105,6 +106,7 @@ extern "C" void hgr_default_options(hgr_options_t *opts)
     opts->use_openmp = 1;
     opts->num_threads = 0;  // 0 = auto-detect
     opts->suppress_partitioner_output = 0;
+    opts->suppress_output = 0;
 }
 
 extern "C" int hgr_reorder_file(hgr_reorderer_t *reorderer,

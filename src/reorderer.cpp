@@ -35,26 +35,31 @@ SymmetricDBReorderer::Result SymmetricDBReorderer::reorder_from_file(
 
     Timer total_timer;
 
-    std::cout << "========================================" << std::endl;
-    std::cout << "Symmetric DB Form Reordering" << std::endl;
-    std::cout << "========================================" << std::endl;
-
-    std::cout << "\n[1/8] Loading matrix from " << matrix_path << std::endl;
+    if (!opts_.suppress_output) {
+        std::cout << "========================================" << std::endl;
+        std::cout << "Symmetric DB Form Reordering" << std::endl;
+        std::cout << "========================================" << std::endl;
+        std::cout << "\n[1/8] Loading matrix from " << matrix_path << std::endl;
+    }
     Timer timer;
     CSRMatrix matrix = read_matrix(matrix_path, format);
     double time_load = timer.elapsed_ms();
-    std::cout << "Loaded: " << matrix.n_rows() << " x " << matrix.n_cols()
-              << " with " << matrix.nnz() << " nonzeros" << std::endl;
-    std::cout << "Time: " << time_load << " ms" << std::endl;
+    if (!opts_.suppress_output) {
+        std::cout << "Loaded: " << matrix.n_rows() << " x " << matrix.n_cols()
+                  << " with " << matrix.nnz() << " nonzeros" << std::endl;
+        std::cout << "Time: " << time_load << " ms" << std::endl;
+    }
 
     Result result = reorder(matrix);
 
     result.stats.time_load_ms = time_load;
     result.stats.time_total_ms = total_timer.elapsed_ms();
 
-    std::cout << "\n========================================" << std::endl;
-    std::cout << "Total time: " << result.stats.time_total_ms << " ms" << std::endl;
-    std::cout << "========================================" << std::endl;
+    if (!opts_.suppress_output) {
+        std::cout << "\n========================================" << std::endl;
+        std::cout << "Total time: " << result.stats.time_total_ms << " ms" << std::endl;
+        std::cout << "========================================" << std::endl;
+    }
 
     return result;
 }
@@ -63,42 +68,46 @@ SymmetricDBReorderer::Result SymmetricDBReorderer::reorder(const CSRMatrix& matr
     Result result;
     Timer timer;
 
-    std::cout << "\n[2/8] Creating standard graph" << std::endl;
+    if (!opts_.suppress_output) std::cout << "\n[2/8] Creating standard graph" << std::endl;
     timer.reset();
     Graph graph = create_graph(matrix);
     result.stats.time_graph_construction_ms = timer.elapsed_ms();
     result.stats.n_vertices = graph.n_vertices();
     result.stats.n_edges = graph.n_edges();
-    std::cout << "Graph: " << graph.n_vertices() << " vertices, "
-              << graph.n_edges() << " edges" << std::endl;
-    std::cout << "Time: " << result.stats.time_graph_construction_ms << " ms" << std::endl;
+    if (!opts_.suppress_output) {
+        std::cout << "Graph: " << graph.n_vertices() << " vertices, "
+                  << graph.n_edges() << " edges" << std::endl;
+        std::cout << "Time: " << result.stats.time_graph_construction_ms << " ms" << std::endl;
+    }
 
-    std::cout << "\n[3/8] Finding edge-clique cover" << std::endl;
+    if (!opts_.suppress_output) std::cout << "\n[3/8] Finding edge-clique cover" << std::endl;
     timer.reset();
     CliqueCover cover = find_clique_cover(graph);
     result.stats.time_clique_cover_ms = timer.elapsed_ms();
     result.stats.n_cliques = cover.n_cliques();
     result.stats.max_clique_size = cover.max_clique_size();
     result.stats.avg_clique_size = cover.avg_clique_size();
-    std::cout << "Clique cover: " << cover.n_cliques() << " cliques" << std::endl;
-    std::cout << "Time: " << result.stats.time_clique_cover_ms << " ms" << std::endl;
+    if (!opts_.suppress_output) {
+        std::cout << "Clique cover: " << cover.n_cliques() << " cliques" << std::endl;
+        std::cout << "Time: " << result.stats.time_clique_cover_ms << " ms" << std::endl;
+    }
 
-    std::cout << "\n[4/8] Creating clique-node hypergraph" << std::endl;
+    if (!opts_.suppress_output) std::cout << "\n[4/8] Creating clique-node hypergraph" << std::endl;
     timer.reset();
     Hypergraph hg = create_hypergraph(cover);
     result.stats.time_hypergraph_construction_ms = timer.elapsed_ms();
     result.stats.n_hypernodes = hg.n_nodes();
     result.stats.n_hyperedges = hg.n_nets();
     result.stats.total_pins = hg.total_pins();
-    std::cout << "Time: " << result.stats.time_hypergraph_construction_ms << " ms" << std::endl;
+    if (!opts_.suppress_output) std::cout << "Time: " << result.stats.time_hypergraph_construction_ms << " ms" << std::endl;
 
-    std::cout << "\n[5/8] Partitioning hypergraph" << std::endl;
+    if (!opts_.suppress_output) std::cout << "\n[5/8] Partitioning hypergraph" << std::endl;
     timer.reset();
     HypergraphPartition hg_partition = partition_hypergraph(hg);
     result.stats.time_partitioning_ms = timer.elapsed_ms();
-    std::cout << "Time: " << result.stats.time_partitioning_ms << " ms" << std::endl;
+    if (!opts_.suppress_output) std::cout << "Time: " << result.stats.time_partitioning_ms << " ms" << std::endl;
 
-    std::cout << "\n[6/8] Creating vertex separator" << std::endl;
+    if (!opts_.suppress_output) std::cout << "\n[6/8] Creating vertex separator" << std::endl;
     timer.reset();
     VertexPartition vertex_partition = create_vertex_partition(
         hg_partition, cover, graph.n_vertices());
@@ -109,24 +118,24 @@ SymmetricDBReorderer::Result SymmetricDBReorderer::reorder(const CSRMatrix& matr
     for (const auto& part : vertex_partition.parts) {
         result.stats.part_sizes.push_back(part.size());
     }
-    std::cout << "Time: " << result.stats.time_separator_construction_ms << " ms" << std::endl;
+    if (!opts_.suppress_output) std::cout << "Time: " << result.stats.time_separator_construction_ms << " ms" << std::endl;
 
-    std::cout << "\n[7/8] Applying block ordering" << std::endl;
+    if (!opts_.suppress_output) std::cout << "\n[7/8] Applying block ordering" << std::endl;
     timer.reset();
     BlockOrderingResult ordering_result = apply_block_ordering(matrix, vertex_partition);
     result.stats.time_block_ordering_ms = timer.elapsed_ms();
     result.stats.blocks_ordered = ordering_result.successful_blocks;
     result.stats.blocks_failed = ordering_result.failed_blocks;
-    std::cout << "Time: " << result.stats.time_block_ordering_ms << " ms" << std::endl;
+    if (!opts_.suppress_output) std::cout << "Time: " << result.stats.time_block_ordering_ms << " ms" << std::endl;
 
     result.partition = ordering_result.reordered_partition;
 
-    std::cout << "\n[8/8] Permuting matrix" << std::endl;
+    if (!opts_.suppress_output) std::cout << "\n[8/8] Permuting matrix" << std::endl;
     timer.reset();
     result.permutation = create_permutation(result.partition, graph.n_vertices());
     result.reordered_matrix = permute_matrix(matrix, result.permutation);
     result.stats.time_permutation_ms = timer.elapsed_ms();
-    std::cout << "Time: " << result.stats.time_permutation_ms << " ms" << std::endl;
+    if (!opts_.suppress_output) std::cout << "Time: " << result.stats.time_permutation_ms << " ms" << std::endl;
 
     result.stats.n_rows = matrix.n_rows();
     result.stats.n_cols = matrix.n_cols();

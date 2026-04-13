@@ -38,6 +38,7 @@ public:
         bool use_openmp;
         int num_threads;
         bool suppress_partitioner_output;
+        bool suppress_output;  // Suppress all reorderer progress output
 
         Options()
             : n_parts(4),
@@ -51,7 +52,8 @@ public:
               parallel_block_ordering(true),
               use_openmp(true),
               num_threads(0),  // 0 = auto-detect
-              suppress_partitioner_output(false) {}
+              suppress_partitioner_output(false),
+              suppress_output(false) {}
     };
 
     struct Result {

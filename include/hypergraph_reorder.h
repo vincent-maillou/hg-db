@@ -50,6 +50,7 @@ typedef struct {
     int use_openmp;
     int num_threads;             /* 0 = auto-detect */
     int suppress_partitioner_output;
+    int suppress_output;         /* Suppress all reorderer progress output */
 } hgr_options_t;
 
 /* Statistics structure */
