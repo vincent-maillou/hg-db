@@ -43,8 +43,12 @@ add_subdirectory(external/mt-kahypar EXCLUDE_FROM_ALL)
 # SuiteSparse — search SUITESPARSE_ROOT, CONDA_PREFIX, then system paths
 set(SS_HINTS ${SUITESPARSE_ROOT} $ENV{CONDA_PREFIX} /usr/local /usr)
 find_library(AMD_LIBRARY            amd             HINTS ${SS_HINTS} PATH_SUFFIXES lib lib64 REQUIRED)
+find_library(CHOLMOD_LIBRARY        cholmod         HINTS ${SS_HINTS} PATH_SUFFIXES lib lib64 REQUIRED)
+find_library(CAMD_LIBRARY           camd            HINTS ${SS_HINTS} PATH_SUFFIXES lib lib64 REQUIRED)
+find_library(COLAMD_LIBRARY         colamd          HINTS ${SS_HINTS} PATH_SUFFIXES lib lib64 REQUIRED)
+find_library(CCOLAMD_LIBRARY        ccolamd         HINTS ${SS_HINTS} PATH_SUFFIXES lib lib64 REQUIRED)
 find_library(SUITESPARSECONFIG_LIBRARY suitesparseconfig HINTS ${SS_HINTS} PATH_SUFFIXES lib lib64 REQUIRED)
-find_path(SUITESPARSE_INCLUDE_DIR NAMES amd.h
+find_path(SUITESPARSE_INCLUDE_DIR NAMES amd.h cholmod.h
     HINTS ${SS_HINTS} PATH_SUFFIXES include/suitesparse include REQUIRED)
 
 # Library
@@ -72,7 +76,7 @@ target_include_directories(hypergraph_reorder
 
 target_link_libraries(hypergraph_reorder
     PRIVATE mtkahypar
-    PUBLIC  ${AMD_LIBRARY} ${SUITESPARSECONFIG_LIBRARY}
+    PUBLIC  ${AMD_LIBRARY} ${CHOLMOD_LIBRARY} ${CAMD_LIBRARY} ${COLAMD_LIBRARY} ${CCOLAMD_LIBRARY} ${SUITESPARSECONFIG_LIBRARY}
 )
 
 if(OpenMP_CXX_FOUND AND USE_OPENMP)
