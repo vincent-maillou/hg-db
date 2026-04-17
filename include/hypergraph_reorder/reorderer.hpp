@@ -30,6 +30,7 @@ class SymmetricDBReorderer {
     bool use_maximal_cliques;
     bool parallel_clique_finding;
     index_t max_clique_enum_vertices;
+    index_t max_clique_enum_edges;
 
     // Ordering options
     OrderingMethod ordering_method;
@@ -48,8 +49,8 @@ class SymmetricDBReorderer {
           seed(-1),
           use_maximal_cliques(true),
           parallel_clique_finding(true),
-          max_clique_enum_vertices(
-              100000),  // Use triangles for graphs > 100k vertices
+          max_clique_enum_vertices(5000),
+          max_clique_enum_edges(100000),
           ordering_method(OrderingMethod::AMD),
           parallel_block_ordering(true),
           use_openmp(true),

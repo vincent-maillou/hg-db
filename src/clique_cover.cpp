@@ -5,6 +5,7 @@
 #include <queue>
 #include <set>
 #include <unordered_set>
+#include <iterator>
 
 #ifdef USE_OPENMP
 #include <omp.h>
@@ -96,7 +97,9 @@ CliqueCover CliqueCoverSolver::solve(const Graph &graph) {
 
   // Phase 1: Find cliques (strategy depends on graph size and options)
   if (opts_.use_maximal_cliques && !opts_.greedy_only) {
-    if (graph.n_vertices() <= opts_.max_clique_enum_vertices) {
+    bool use_bk = graph.n_vertices() <= opts_.max_clique_enum_vertices &&
+                  graph.n_edges() <= opts_.max_clique_enum_edges;
+    if (use_bk) {
       std::cout << "Finding maximal cliques..." << std::endl;
       all_cliques = find_maximal_cliques(graph);
       std::cout << "Found " << all_cliques.size() << " maximal cliques"
@@ -106,7 +109,7 @@ CliqueCover CliqueCoverSolver::solve(const Graph &graph) {
       std::cout << "Selecting covering cliques..." << std::endl;
       all_cliques = select_covering_cliques(graph, all_cliques);
     } else {
-      // For large graphs, use greedy triangle selection (much faster)
+      // For large/dense graphs, use greedy triangle selection (much faster)
       std::cout << "Graph too large for full maximal clique enumeration"
                 << std::endl;
       std::cout << "Using greedy triangle selection instead..." << std::endl;
@@ -178,19 +181,24 @@ std::vector<std::vector<index_t>> CliqueCoverSolver::enumerate_triangles(
       auto u_neighbors = graph.neighbors(u);
 
       for (auto v : u_neighbors) {
-        if (v <= u) continue;  // Avoid duplicates
+        if (v <= u) continue;  // Avoid duplicates, ensure u < v
 
         auto v_neighbors = graph.neighbors(v);
 
-        // Find common neighbors (intersection)
-        for (auto w : u_neighbors) {
-          if (w <= v) continue;  // Ensure u < v < w
+        // Two-pointer intersection of u_neighbors and v_neighbors for w > v.
+        // Both lists are sorted, so this is O(deg(u) + deg(v)) per edge.
+        auto u_it = std::upper_bound(u_neighbors.begin(), u_neighbors.end(), v);
+        auto v_it = std::upper_bound(v_neighbors.begin(), v_neighbors.end(), v);
 
-          // Check if w is also a neighbor of v
-          if (std::find(v_neighbors.begin(), v_neighbors.end(), w) !=
-              v_neighbors.end()) {
-            // Found triangle: u, v, w
-            thread_triangles[tid].push_back({u, v, w});
+        while (u_it != u_neighbors.end() && v_it != v_neighbors.end()) {
+          if (*u_it == *v_it) {
+            thread_triangles[tid].push_back({u, v, *u_it});
+            ++u_it;
+            ++v_it;
+          } else if (*u_it < *v_it) {
+            ++u_it;
+          } else {
+            ++v_it;
           }
         }
       }

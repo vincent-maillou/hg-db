@@ -60,14 +60,15 @@ class CliqueCoverSolver {
     bool use_maximal_cliques;
     bool use_parallel;
     index_t max_clique_enum_vertices;
+    index_t max_clique_enum_edges;
     bool greedy_only;
     int num_threads;
 
     Options()
         : use_maximal_cliques(true),
           use_parallel(true),
-          max_clique_enum_vertices(
-              100000),  // Use triangles for graphs > 100k vertices
+          max_clique_enum_vertices(5000),
+          max_clique_enum_edges(100000),
           greedy_only(false),
           num_threads(-1) {}
   };
