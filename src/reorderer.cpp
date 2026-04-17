@@ -24,6 +24,7 @@ SymmetricDBReorderer::SymmetricDBReorderer(const Options& opts) : opts_(opts) {
   clique_opts.use_maximal_cliques = opts.use_maximal_cliques;
   clique_opts.use_parallel = opts.parallel_clique_finding && opts.use_openmp;
   clique_opts.max_clique_enum_vertices = opts.max_clique_enum_vertices;
+  clique_opts.max_clique_enum_edges = opts.max_clique_enum_edges;
   clique_opts.num_threads = opts.num_threads;
   clique_solver_ = std::make_unique<CliqueCoverSolver>(clique_opts);
 }
