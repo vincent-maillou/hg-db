@@ -83,8 +83,9 @@ void HypergraphPartitioner::cleanup_context() {
 
 HypergraphPartition HypergraphPartitioner::partition(const Hypergraph& hg) {
   if (hg.n_nets() == 0) {
-    std::cout << "Warning: Empty hypergraph, creating trivial partition"
-              << std::endl;
+    if (!opts_.suppress_output)
+      std::cout << "Warning: Empty hypergraph, creating trivial partition"
+                << std::endl;
 
     HypergraphPartition result;
     result.n_parts = opts_.n_parts;
@@ -100,8 +101,9 @@ HypergraphPartition HypergraphPartitioner::partition(const Hypergraph& hg) {
     return result;
   }
 
-  std::cout << "Partitioning CNH: " << hg.n_nodes() << " nodes, " << hg.n_nets()
-            << " nets into " << opts_.n_parts << " parts" << std::endl;
+  if (!opts_.suppress_output)
+    std::cout << "Partitioning CNH: " << hg.n_nodes() << " nodes, " << hg.n_nets()
+              << " nets into " << opts_.n_parts << " parts" << std::endl;
 
   // Prepare hypergraph data for MT-KaHyPar
   const mt_kahypar_hypernode_id_t num_nodes =
@@ -188,12 +190,14 @@ HypergraphPartition HypergraphPartitioner::partition(const Hypergraph& hg) {
 
   result.objective = objective;
 
-  std::cout << "Partition objective (km1): " << objective << std::endl;
-  std::cout << "Part sizes: ";
-  for (auto sz : result.part_sizes) {
-    std::cout << sz << " ";
+  if (!opts_.suppress_output) {
+    std::cout << "Partition objective (km1): " << objective << std::endl;
+    std::cout << "Part sizes: ";
+    for (auto sz : result.part_sizes) {
+      std::cout << sz << " ";
+    }
+    std::cout << std::endl;
   }
-  std::cout << std::endl;
 
   // Cleanup MT-KaHyPar structures
   mt_kahypar_free_partitioned_hypergraph(partitioned_hg);
@@ -205,7 +209,8 @@ HypergraphPartition HypergraphPartitioner::partition(const Hypergraph& hg) {
 VertexPartition HypergraphPartitioner::create_vertex_partition(
     const HypergraphPartition& cnh_partition, const CliqueCover& cover,
     index_t n_vertices) {
-  std::cout << "Creating vertex separator from CNH partition..." << std::endl;
+  if (!opts_.suppress_output)
+    std::cout << "Creating vertex separator from CNH partition..." << std::endl;
 
   VertexPartition result;
   result.n_parts = cnh_partition.n_parts;
@@ -243,16 +248,17 @@ VertexPartition HypergraphPartitioner::create_vertex_partition(
   }
   std::sort(result.separator.begin(), result.separator.end());
 
-  // TODO: Have to somehow output part sizes
-  std::cout << "Vertex partition completed:" << std::endl;
-  std::cout << "  Part sizes: ";
-  for (const auto& part : result.parts) {
-    std::cout << part.size() << " ";
+  if (!opts_.suppress_output) {
+    std::cout << "Vertex partition completed:" << std::endl;
+    std::cout << "  Part sizes: ";
+    for (const auto& part : result.parts) {
+      std::cout << part.size() << " ";
+    }
+    std::cout << std::endl;
+    std::cout << "  Separator size: " << result.separator.size() << " ("
+              << (100.0 * result.separator.size() / n_vertices) << "%)"
+              << std::endl;
   }
-  std::cout << std::endl;
-  std::cout << "  Separator size: " << result.separator.size() << " ("
-            << (100.0 * result.separator.size() / n_vertices) << "%)"
-            << std::endl;
 
   return result;
 }

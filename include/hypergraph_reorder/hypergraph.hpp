@@ -34,7 +34,8 @@ class Hypergraph {
   std::span<const index_t> net_pins(index_t net_id) const;
 
   // Create CNH from clique cover (optimized with pre-built mapping)
-  static Hypergraph from_clique_cover(const CliqueCover &cover);
+  static Hypergraph from_clique_cover(const CliqueCover &cover,
+                                      bool suppress_output = false);
 
  private:
   index_t n_nodes_;     // Number of hypernodes (cliques)

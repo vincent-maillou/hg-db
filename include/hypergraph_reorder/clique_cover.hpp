@@ -63,6 +63,7 @@ class CliqueCoverSolver {
     index_t max_clique_enum_edges;
     bool greedy_only;
     int num_threads;
+    bool suppress_output;
 
     Options()
         : use_maximal_cliques(true),
@@ -70,7 +71,8 @@ class CliqueCoverSolver {
           max_clique_enum_vertices(5000),
           max_clique_enum_edges(100000),
           greedy_only(false),
-          num_threads(-1) {}
+          num_threads(-1),
+          suppress_output(false) {}
   };
 
   explicit CliqueCoverSolver(const Options& opts = Options());

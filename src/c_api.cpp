@@ -46,31 +46,6 @@ extern "C" hgr_reorderer_t* hgr_create(const hgr_options_t* opts) {
           cpp_opts.preset = MtKahyparPreset::DEFAULT;
           break;
       }
-
-      // Convert ordering method
-      switch (opts->ordering_method) {
-        case HGR_ORDERING_AMD:
-          cpp_opts.ordering_method = OrderingMethod::AMD;
-          break;
-        case HGR_ORDERING_CAMD:
-          cpp_opts.ordering_method = OrderingMethod::CAMD;
-          break;
-        case HGR_ORDERING_METIS:
-          cpp_opts.ordering_method = OrderingMethod::METIS;
-          break;
-        case HGR_ORDERING_NESDIS:
-          cpp_opts.ordering_method = OrderingMethod::NESDIS;
-          break;
-        case HGR_ORDERING_COLAMD:
-          cpp_opts.ordering_method = OrderingMethod::COLAMD;
-          break;
-        case HGR_ORDERING_NATURAL:
-          cpp_opts.ordering_method = OrderingMethod::NATURAL;
-          break;
-        case HGR_ORDERING_NONE:
-          cpp_opts.ordering_method = OrderingMethod::NONE;
-          break;
-      }
     }
 
     auto* handle = new hgr_reorderer_t();
@@ -90,50 +65,10 @@ extern "C" void hgr_default_options(hgr_options_t* opts) {
   opts->imbalance = 0.03;
   opts->preset = HGR_PRESET_DEFAULT;
   opts->seed = -1;
-  opts->ordering_method = HGR_ORDERING_AMD;
   opts->use_openmp = 1;
   opts->num_threads = 0;  // 0 = auto-detect
   opts->suppress_partitioner_output = 0;
   opts->suppress_output = 0;
-}
-
-extern "C" int hgr_reorder_file(hgr_reorderer_t* reorderer,
-                                const char* input_path,
-                                hgr_matrix_format_t format,
-                                hgr_result_t** result) {
-  if (!reorderer || !input_path || !result) return -1;
-
-  try {
-    // Convert format
-    MatrixFormat cpp_format = MatrixFormat::AUTO;
-    switch (format) {
-      case HGR_FORMAT_MTX:
-        cpp_format = MatrixFormat::MTX;
-        break;
-      case HGR_FORMAT_METIS:
-        cpp_format = MatrixFormat::METIS;
-        break;
-      case HGR_FORMAT_CSR_BINARY:
-        cpp_format = MatrixFormat::CSR_BINARY;
-        break;
-      case HGR_FORMAT_AUTO:
-        cpp_format = MatrixFormat::AUTO;
-        break;
-    }
-
-    // Run reordering
-    auto cpp_result =
-        reorderer->reorderer->reorder_from_file(input_path, cpp_format);
-
-    // Create result handle
-    auto* res = new hgr_result_t();
-    res->result = std::move(cpp_result);
-    *result = res;
-
-    return 0;
-  } catch (...) {
-    return -1;
-  }
 }
 
 extern "C" int hgr_reorder_csr(hgr_reorderer_t* reorderer, int64_t n_rows,
@@ -182,54 +117,15 @@ extern "C" int hgr_get_permutation(hgr_result_t* result,
   }
 }
 
-extern "C" int hgr_get_reordered_matrix(hgr_result_t* result, int64_t* n_rows,
-                                        int64_t* nnz, const int64_t** row_ptr,
-                                        const int64_t** col_idx,
-                                        const double** values) {
-  if (!result || !n_rows || !nnz || !row_ptr || !col_idx) return -1;
+extern "C" int hgr_get_partition(hgr_result_t* result, int64_t* n_parts,
+                                 int64_t* separator_size,
+                                 const int64_t** part_sizes) {
+  if (!result || !n_parts || !separator_size || !part_sizes) return -1;
 
   try {
-    *n_rows = result->result.reordered_matrix.n_rows();
-    *nnz = result->result.reordered_matrix.nnz();
-    *row_ptr = result->result.reordered_matrix.row_ptr().data();
-    *col_idx = result->result.reordered_matrix.col_idx().data();
-
-    if (values) {
-      if (result->result.reordered_matrix.pattern_only()) {
-        *values = nullptr;
-      } else {
-        *values = result->result.reordered_matrix.values().data();
-      }
-    }
-
-    return 0;
-  } catch (...) {
-    return -1;
-  }
-}
-
-extern "C" int hgr_save_matrix(hgr_result_t* result, const char* output_path,
-                               hgr_matrix_format_t format) {
-  if (!result || !output_path) return -1;
-
-  try {
-    MatrixFormat cpp_format = MatrixFormat::MTX;
-    switch (format) {
-      case HGR_FORMAT_MTX:
-        cpp_format = MatrixFormat::MTX;
-        break;
-      case HGR_FORMAT_METIS:
-        cpp_format = MatrixFormat::METIS;
-        break;
-      case HGR_FORMAT_CSR_BINARY:
-        cpp_format = MatrixFormat::CSR_BINARY;
-        break;
-      case HGR_FORMAT_AUTO:
-        cpp_format = detect_format(output_path);
-        break;
-    }
-
-    write_matrix(output_path, result->result.reordered_matrix, cpp_format);
+    *n_parts = result->result.stats.n_parts;
+    *separator_size = result->result.stats.separator_size;
+    *part_sizes = result->result.stats.part_sizes.data();
     return 0;
   } catch (...) {
     return -1;
@@ -250,22 +146,6 @@ extern "C" int hgr_get_statistics(hgr_result_t* result,
     stats->time_total_ms = result->result.stats.time_total_ms;
     stats->time_clique_cover_ms = result->result.stats.time_clique_cover_ms;
     stats->time_partitioning_ms = result->result.stats.time_partitioning_ms;
-    stats->time_block_ordering_ms = result->result.stats.time_block_ordering_ms;
-    return 0;
-  } catch (...) {
-    return -1;
-  }
-}
-
-extern "C" int hgr_get_part_sizes(hgr_result_t* result,
-                                  const int64_t** part_sizes, int64_t* n,
-                                  int64_t* separator) {
-  if (!result || !part_sizes || !n) return -1;
-
-  try {
-    *part_sizes = result->result.stats.part_sizes.data();
-    *separator = result->result.stats.separator_size;
-    *n = result->result.stats.part_sizes.size();
     return 0;
   } catch (...) {
     return -1;

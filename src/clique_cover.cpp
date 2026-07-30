@@ -100,25 +100,32 @@ CliqueCover CliqueCoverSolver::solve(const Graph &graph) {
     bool use_bk = graph.n_vertices() <= opts_.max_clique_enum_vertices &&
                   graph.n_edges() <= opts_.max_clique_enum_edges;
     if (use_bk) {
-      std::cout << "Finding maximal cliques..." << std::endl;
+      if (!opts_.suppress_output)
+        std::cout << "Finding maximal cliques..." << std::endl;
       all_cliques = find_maximal_cliques(graph);
-      std::cout << "Found " << all_cliques.size() << " maximal cliques"
-                << std::endl;
+      if (!opts_.suppress_output)
+        std::cout << "Found " << all_cliques.size() << " maximal cliques"
+                  << std::endl;
 
       // Phase 2: Greedily select cliques to cover edges
-      std::cout << "Selecting covering cliques..." << std::endl;
+      if (!opts_.suppress_output)
+        std::cout << "Selecting covering cliques..." << std::endl;
       all_cliques = select_covering_cliques(graph, all_cliques);
     } else {
       // For large/dense graphs, use greedy triangle selection (much faster)
-      std::cout << "Graph too large for full maximal clique enumeration"
-                << std::endl;
-      std::cout << "Using greedy triangle selection instead..." << std::endl;
+      if (!opts_.suppress_output)
+        std::cout << "Graph too large for full maximal clique enumeration"
+                  << std::endl;
+      if (!opts_.suppress_output)
+        std::cout << "Using greedy triangle selection instead..." << std::endl;
       auto all_triangles = enumerate_triangles(graph);
-      std::cout << "Found " << all_triangles.size() << " triangles"
-                << std::endl;
+      if (!opts_.suppress_output)
+        std::cout << "Found " << all_triangles.size() << " triangles"
+                  << std::endl;
 
       // Greedily select triangles to cover edges
-      std::cout << "Selecting covering triangles..." << std::endl;
+      if (!opts_.suppress_output)
+        std::cout << "Selecting covering triangles..." << std::endl;
       all_cliques = select_covering_cliques(graph, all_triangles);
     }
   }
@@ -142,7 +149,8 @@ CliqueCover CliqueCoverSolver::solve(const Graph &graph) {
   // Add 2-cliques for any remaining edges
   cover_remaining_edges(graph, covered_edges, all_cliques);
 
-  std::cout << "Total cliques: " << all_cliques.size() << std::endl;
+  if (!opts_.suppress_output)
+    std::cout << "Total cliques: " << all_cliques.size() << std::endl;
 
   stats_.time_clique_cover_ms = timer.elapsed_ms();
   stats_.n_cliques = all_cliques.size();
@@ -437,8 +445,9 @@ void CliqueCoverSolver::cover_remaining_edges(
     cliques.push_back({u, v});
   }
 
-  std::cout << "Added " << edge_set.size() << " 2-cliques for uncovered edges"
-            << std::endl;
+  if (!opts_.suppress_output)
+    std::cout << "Added " << edge_set.size() << " 2-cliques for uncovered edges"
+              << std::endl;
 }
 
 }  // namespace hypergraph_reorder

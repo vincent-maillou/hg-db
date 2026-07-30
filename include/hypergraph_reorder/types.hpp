@@ -71,7 +71,7 @@ struct Statistics {
   index_t separator_size = 0;
   double separator_ratio = 0.0;
 
-  // Ordering statistics
+  // Ordering statistics (kept for compatibility, always zero after block ordering removal)
   index_t blocks_ordered = 0;
   index_t blocks_failed = 0;
 
@@ -82,55 +82,9 @@ struct Statistics {
   double time_hypergraph_construction_ms = 0.0;
   double time_partitioning_ms = 0.0;
   double time_separator_construction_ms = 0.0;
-  double time_block_ordering_ms = 0.0;
   double time_permutation_ms = 0.0;
   double time_total_ms = 0.0;
 };
-
-// Ordering method enum
-enum class OrderingMethod {
-  AMD,      // Approximate Minimum Degree
-  CAMD,     // Constrained AMD
-  METIS,    // METIS nested dissection
-  NESDIS,   // Nested dissection
-  COLAMD,   // Column AMD
-  NATURAL,  // Natural ordering (no reordering)
-  NONE      // Skip block ordering
-};
-
-// Convert ordering method to string
-inline const char* ordering_method_to_string(OrderingMethod method) {
-  switch (method) {
-    case OrderingMethod::AMD:
-      return "AMD";
-    case OrderingMethod::CAMD:
-      return "CAMD";
-    case OrderingMethod::METIS:
-      return "METIS";
-    case OrderingMethod::NESDIS:
-      return "NESDIS";
-    case OrderingMethod::COLAMD:
-      return "COLAMD";
-    case OrderingMethod::NATURAL:
-      return "NATURAL";
-    case OrderingMethod::NONE:
-      return "NONE";
-    default:
-      return "UNKNOWN";
-  }
-}
-
-// Parse ordering method from string
-inline OrderingMethod parse_ordering_method(const std::string& str) {
-  if (str == "amd" || str == "AMD") return OrderingMethod::AMD;
-  if (str == "camd" || str == "CAMD") return OrderingMethod::CAMD;
-  if (str == "metis" || str == "METIS") return OrderingMethod::METIS;
-  if (str == "nesdis" || str == "NESDIS") return OrderingMethod::NESDIS;
-  if (str == "colamd" || str == "COLAMD") return OrderingMethod::COLAMD;
-  if (str == "natural" || str == "NATURAL") return OrderingMethod::NATURAL;
-  if (str == "none" || str == "NONE") return OrderingMethod::NONE;
-  throw HypergraphReorderError("Unknown ordering method: " + str);
-}
 
 }  // namespace hypergraph_reorder
 
