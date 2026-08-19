@@ -1,48 +1,72 @@
-# hypergraph-reordering
+# HG-DB — Hypergraph-based Doubly-Bordered Reordering
+
+This library implements a doubly-bordered (DB) matrix reordering via
+edge-clique cover (ECC), clique-node hypergraph (CNH) construction, and
+MT-KaHyPar partitioning.  It is used as a C/C++ dependency of the
+[parallax](https://github.com/vincent-maillou/parallax) Python package.
 
 ## Dependencies
 
 - GCC 14+ (C++20)
 - CMake 3.16+
-- SuiteSparse
-- BLAS and LAPACK
-- [MT-KaHyPar](https://github.com/kahypar/mt-kahypar) (and it's dependencies; included as a submodule, builds automatically)
+- [MT-KaHyPar](https://github.com/kahypar/mt-kahypar) (and its dependencies)
 
 ## Building
 
-```bash
-git clone --recurse-submodules https://github.com/ohcomely/hypergraph-reordering.git
-cd hypergraph-reordering/
-mkdir build && cd build
-cmake ..
-make -j$(nproc)
-```
-
-On an HPC cluster without system TBB:
+This library is **not** meant to be built standalone.  It is built
+automatically by the parallax CMake build system:
 
 ```bash
-cmake .. -DKAHYPAR_DOWNLOAD_TBB=ON -DCMAKE_EXE_LINKER_FLAGS="-lpthread"
-make -j$(nproc)
+cd parallax/
+cmake -B build -DPARALLAX_PROFILE=default
+cmake --build build -j$(nproc)
 ```
 
-If SuiteSparse is not in a standard location, set `-DSUITESPARSE_ROOT=/path/to/suitesparse`. If using conda, `$CONDA_PREFIX` is picked up automatically.
+On an HPC cluster without system TBB, the parallax profile should set:
 
-## Usage
-
+```cmake
+set(PARALLAX_MTKAHYPAR_EXTRA_ARGS
+    "-DKAHYPAR_DOWNLOAD_TBB=ON"
+    "-DKAHYPAR_DISABLE_HWLOC=ON"
+    "-DCMAKE_EXE_LINKER_FLAGS='-lpthread'")
 ```
-hypergraph_reorder <input_matrix> <k> [options]
+
+The parallax build system handles TBB installation and RPATH setup
+automatically.
+
+## Python Interface
+
+This library is exposed via `parallax.ordering.general.HGDB`:
+
+```python
+from parallax.ordering.general import HGDB, HGDBConfig
+
+config = HGDBConfig(n_parts=8)
+hgdb = HGDB(config=config)
+result = hgdb.order(sparse_matrix)
 ```
 
-`k` is the number of diagonal blocks. The input format is detected from the file extension (`.mtx` for Matrix Market, `.graph` for METIS, otherwise binary CSR).
+The result contains a `DoublyBordered` structural descriptor with `General`
+leaves for each diagonal block and the global separator.  Per-block refinement
+is delegated to parallax's `ComposedOrdering`:
 
-**Options:**
+```python
+from parallax.ordering.composed import ComposedOrdering
+from parallax.ordering.general import AMD
 
-| Flag | Description |
-|---|---|
-| `--preset <name>` | MT-KaHyPar preset: `default`, `quality`, `deterministic`, `large_k` |
-| `--threads <n>` | Number of threads (default: auto) |
-| `--quiet` | Suppress partitioner output |
-| `--output-perm` | Write permutation to `<input>.perm` |
-| `--output-graph` | Write METIS graph to `<input>.graph` |
+composed = ComposedOrdering(HGDB(config))
+composed.add_refinement(AMD())
+result = composed.order(sparse_matrix)
+```
 
-The reordered matrix is written to `<input>_reordered.mtx`.
+## Algorithm
+
+1. Convert CSR matrix to an undirected graph.
+2. Compute an edge-clique cover (ECC) — parallel Bron-Kerbosch with pivoting
+   for small graphs, parallel triangle enumeration for larger graphs.
+3. Build a clique-node hypergraph (CNH) from the ECC.
+4. Partition the CNH with MT-KaHyPar.
+5. Detect vertex separators from the partition.
+6. Construct the DB permutation: diagonal blocks first, separator last.
+
+See [`ECC.md`](ECC.md) for details on the clique-cover algorithm.
