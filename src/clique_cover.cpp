@@ -224,8 +224,21 @@ std::vector<std::vector<index_t>> CliqueCoverSolver::enumerate_triangles(
 
 std::vector<std::vector<index_t>> CliqueCoverSolver::find_maximal_cliques(
     const Graph &graph) {
-  // Compute degeneracy ordering
+  // Compute degeneracy ordering.
+  //
+  // ordering[i] = vertex at position i in the degeneracy ordering.
   auto ordering = graph.compute_degeneracy_ordering();
+
+  // Build inverse permutation:
+  //
+  // rank[v] = position of vertex v in the degeneracy ordering.
+  //
+  // Vertex IDs are not assumed to correspond to the degeneracy ordering.
+  std::vector<index_t> rank(graph.n_vertices());
+
+  for (index_t i = 0; i < static_cast<index_t>(ordering.size()); ++i) {
+    rank[ordering[i]] = i;
+  }
 
   // Thread-local clique storage
   std::vector<std::vector<std::vector<index_t>>> thread_cliques;
@@ -259,18 +272,23 @@ std::vector<std::vector<index_t>> CliqueCoverSolver::find_maximal_cliques(
       // R = {v}
       std::vector<index_t> R = {v};
 
-      // P = neighbors of v that come after v in ordering
+      // Partition the neighbors of v according to the degeneracy ordering:
+      //
+      // P = later neighbors
+      // X = earlier neighbors
+      //
       std::vector<index_t> P;
+      std::vector<index_t> X;
+
       for (auto u : graph.neighbors(v)) {
-        if (u > v) {
+        if (rank[u] > rank[v]) {
           P.push_back(u);
+        } else {
+          X.push_back(u);
         }
       }
 
-      // X = empty (neighbors before v are already processed)
-      std::vector<index_t> X;
-
-      // Run Bron-Kerbosch from this starting point
+      // Run Bron-Kerbosch from this starting point.
       bron_kerbosch_pivot(graph, R, P, X, thread_cliques[tid]);
     }
   }
