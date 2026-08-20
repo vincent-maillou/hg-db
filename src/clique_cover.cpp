@@ -263,6 +263,9 @@ std::vector<std::vector<index_t>> CliqueCoverSolver::find_maximal_cliques(
     int tid = 0;
 #endif
 
+  std::vector<uint64_t> p_marker(graph.n_vertices(), 0);
+  uint64_t marker_id = 0;
+
 #ifdef USE_OPENMP
 #pragma omp for schedule(dynamic, 1)
 #endif
@@ -289,7 +292,7 @@ std::vector<std::vector<index_t>> CliqueCoverSolver::find_maximal_cliques(
       }
 
       // Run Bron-Kerbosch from this starting point.
-      bron_kerbosch_pivot(graph, R, P, X, thread_cliques[tid]);
+      bron_kerbosch_pivot(graph, R, P, X, thread_cliques[tid], p_marker, marker_id);
     }
   }
 
@@ -303,8 +306,15 @@ std::vector<std::vector<index_t>> CliqueCoverSolver::find_maximal_cliques(
 }
 
 void CliqueCoverSolver::bron_kerbosch_pivot(
-    const Graph &graph, std::vector<index_t> &R, std::vector<index_t> &P,
-    std::vector<index_t> &X, std::vector<std::vector<index_t>> &cliques) {
+    const Graph &graph, 
+    std::vector<index_t> &R, 
+    std::vector<index_t> &P,
+    std::vector<index_t> &X, 
+    std::vector<std::vector<index_t>> &cliques,
+    std::vector<uint64_t> &p_marker,
+    uint64_t &marker_id
+  ) {
+  // If both sets are empty, R is a maximal clique.
   if (P.empty() && X.empty()) {
     // R is a maximal clique
     if (R.size() >= 2) {  // Only keep cliques with at least 2 vertices
@@ -315,69 +325,149 @@ void CliqueCoverSolver::bron_kerbosch_pivot(
 
   if (P.empty()) return;
 
-  // Choose pivot from P ∪ X with maximum degree in P
-  index_t pivot = P[0];
+  // Mark all vertices in P.
+  // . this makes membership testing `v in P` O(1)
+  ++marker_id;
+  const uint64_t current_marker = marker_id;
+
+  for (auto v : P) {
+    p_marker[v] = current_marker;
+  }
+
+  // Choose pivot from P ∪ X maximizing |N(u) ∩ P|.
+  //
+  // Since adjacency lists are sorted, no std::set or std::find is needed.
+  // We simply scan the adjacency list of each candidate and use the marker
+  // array to determine whether each neighbor belongs to P.
+  index_t pivot = P.front();
   index_t max_connections = 0;
 
-  for (auto u : P) {
+  auto count_p_neighbors = [&](index_t u) -> index_t {
     index_t connections = 0;
+
     for (auto v : graph.neighbors(u)) {
-      if (std::find(P.begin(), P.end(), v) != P.end()) {
-        connections++;
+      if (p_marker[v] == current_marker) {
+        ++connections;
       }
     }
+
+    return connections;
+  };
+
+  // Candidates from P.
+  for (auto u : P) {
+    index_t connections = count_p_neighbors(u);
+
     if (connections > max_connections) {
       max_connections = connections;
       pivot = u;
     }
   }
 
-  // Try vertices in P \ neighbors(pivot)
-  std::set<index_t> pivot_neighbors;
-  for (auto u : graph.neighbors(pivot)) {
-    pivot_neighbors.insert(u);
+  // Candidates from X.
+  for (auto u : X) {
+    index_t connections = count_p_neighbors(u);
+
+    if (connections > max_connections) {
+      max_connections = connections;
+      pivot = u;
+    }
   }
 
+  // Construct P \ N(pivot).
+  //
+  // P and graph.neighbors(pivot) are both sorted, so this can be computed
+  // with a linear two-pointer traversal.
   std::vector<index_t> candidates;
-  for (auto v : P) {
-    if (pivot_neighbors.find(v) == pivot_neighbors.end()) {
+  const auto pivot_neighbors = graph.neighbors(pivot);
+
+  candidates.reserve(P.size());
+
+  size_t p_idx = 0;
+  size_t n_idx = 0;
+
+  while (p_idx < P.size()) {
+    const index_t v = P[p_idx];
+
+    while (n_idx < pivot_neighbors.size() &&
+           pivot_neighbors[n_idx] < v) {
+      ++n_idx;
+    }
+
+    if (n_idx == pivot_neighbors.size() ||
+        pivot_neighbors[n_idx] != v) {
       candidates.push_back(v);
     }
+
+    ++p_idx;
   }
 
+  // Process candidates.
   for (auto v : candidates) {
-    // R' = R ∪ {v}
     R.push_back(v);
 
-    // P' = P ∩ neighbors(v)
+    // Compute P' = P ∩ N(v).
+    //
+    // Both P and N(v) are sorted.
     std::vector<index_t> P_new;
-    std::set<index_t> v_neighbors;
-    for (auto u : graph.neighbors(v)) {
-      v_neighbors.insert(u);
-    }
-    for (auto u : P) {
-      if (v_neighbors.count(u)) {
-        P_new.push_back(u);
+    const auto v_neighbors = graph.neighbors(v);
+
+    P_new.reserve(std::min(P.size(), v_neighbors.size()));
+
+    size_t i = 0;
+    size_t j = 0;
+
+    while (i < P.size() && j < v_neighbors.size()) {
+      if (P[i] == v_neighbors[j]) {
+        P_new.push_back(P[i]);
+        ++i;
+        ++j;
+      } else if (P[i] < v_neighbors[j]) {
+        ++i;
+      } else {
+        ++j;
       }
     }
 
-    // X' = X ∩ neighbors(v)
+    // Compute X' = X ∩ N(v).
+    //
+    // X is also maintained in sorted order.
     std::vector<index_t> X_new;
-    for (auto u : X) {
-      if (v_neighbors.count(u)) {
-        X_new.push_back(u);
+    X_new.reserve(std::min(X.size(), v_neighbors.size()));
+
+    i = 0;
+    j = 0;
+
+    while (i < X.size() && j < v_neighbors.size()) {
+      if (X[i] == v_neighbors[j]) {
+        X_new.push_back(X[i]);
+        ++i;
+        ++j;
+      } else if (X[i] < v_neighbors[j]) {
+        ++i;
+      } else {
+        ++j;
       }
     }
 
-    // Recursive call
-    bron_kerbosch_pivot(graph, R, P_new, X_new, cliques);
+    // Recursive call.
+    bron_kerbosch_pivot(
+        graph, R, P_new, X_new, cliques, p_marker, marker_id);
 
-    // Backtrack
     R.pop_back();
 
-    // Move v from P to X
-    P.erase(std::remove(P.begin(), P.end(), v), P.end());
-    X.push_back(v);
+    // Move v from P to X.
+    //
+    // We deliberately avoid std::remove/erase here. Since candidates is a
+    // snapshot of the original P \ N(pivot), we can locate v using lower_bound.
+    auto it = std::lower_bound(P.begin(), P.end(), v);
+    if (it != P.end() && *it == v) {
+      P.erase(it);
+    }
+
+    // X is sorted, so insert v while preserving sorted order.
+    auto x_it = std::lower_bound(X.begin(), X.end(), v);
+    X.insert(x_it, v);
   }
 }
 

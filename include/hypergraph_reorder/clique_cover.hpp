@@ -98,7 +98,10 @@ class CliqueCoverSolver {
                            std::vector<index_t>& R,  // Current clique
                            std::vector<index_t>& P,  // Candidates
                            std::vector<index_t>& X,  // Already processed
-                           std::vector<std::vector<index_t>>& cliques);
+                           std::vector<std::vector<index_t>>& cliques, // Output
+                           std::vector<uint64_t> &p_marker, // Marker array for P membership (timestamping)
+                           uint64_t &marker_id // Current marker ID
+  );
 
   // Phase 2: Greedy clique selection to cover edges
   std::vector<std::vector<index_t>> select_covering_cliques(
