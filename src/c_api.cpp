@@ -4,6 +4,17 @@
 #include "hypergraph_reorder.h"
 #include "hypergraph_reorder/reorderer.hpp"
 
+/* Fallbacks when the build system does not inject the project version */
+#ifndef HGR_VERSION_MAJOR
+#define HGR_VERSION_MAJOR 1
+#endif
+#ifndef HGR_VERSION_MINOR
+#define HGR_VERSION_MINOR 0
+#endif
+#ifndef HGR_VERSION_PATCH
+#define HGR_VERSION_PATCH 0
+#endif
+
 using namespace hypergraph_reorder;
 
 // Opaque structures
@@ -57,6 +68,12 @@ extern "C" hgr_reorderer_t* hgr_create(const hgr_options_t* opts) {
 }
 
 extern "C" void hgr_free(hgr_reorderer_t* reorderer) { delete reorderer; }
+
+extern "C" void hgr_version(int version[3]) {
+  version[0] = HGR_VERSION_MAJOR;
+  version[1] = HGR_VERSION_MINOR;
+  version[2] = HGR_VERSION_PATCH;
+}
 
 extern "C" void hgr_default_options(hgr_options_t* opts) {
   if (!opts) return;

@@ -62,6 +62,13 @@ target_include_directories(hypergraph_reorder
     PRIVATE ${MTKAHYPAR_INCLUDE_DIR}
 )
 
+# Expose the project version to the C API (hgr_version)
+target_compile_definitions(hypergraph_reorder PRIVATE
+    HGR_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
+    HGR_VERSION_MINOR=${PROJECT_VERSION_MINOR}
+    HGR_VERSION_PATCH=${PROJECT_VERSION_PATCH}
+)
+
 target_link_libraries(hypergraph_reorder
     PRIVATE ${MTKAHYPAR_LIBRARY}
 )

@@ -46,6 +46,9 @@ typedef struct {
   double time_partitioning_ms;
 } hgr_statistics_t;
 
+/* Library version: fills version[0..2] = {major, minor, patch} */
+void hgr_version(int version[3]);
+
 /* Create/destroy reorderer */
 hgr_reorderer_t* hgr_create(const hgr_options_t* opts);
 void hgr_free(hgr_reorderer_t* reorderer);
