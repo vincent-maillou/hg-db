@@ -6,6 +6,7 @@
 #include <string>
 
 #include "clique_cover.hpp"
+#include "ecc.hpp"
 #include "graph.hpp"
 #include "hypergraph.hpp"
 #include "partitioner.hpp"
@@ -14,45 +15,29 @@
 
 namespace hypergraph_reorder {
 
+// Runtime options shared by all pipeline stages.
+struct RuntimeOptions {
+  int num_threads = 0;          // 0 = auto-detect
+  bool suppress_output = true;  // suppresses ALL progress output,
+                                // including MT-KaHyPar verbose
+};
+
 // Main reorderer class
 class SymmetricDBReorderer {
  public:
+  // Options are a composition of sub-structs; each sub-struct's defaults
+  // are declared exactly once (in its own header) and never re-declared or
+  // hand-copied between layers.
   struct Options {
-    // Partitioning options
-    index_t n_parts;
-    double imbalance;
-    MtKahyparPreset preset;  // MT-KaHyPar preset (replaces config file)
-    int seed;
-
-    // Clique cover options
-    bool use_maximal_cliques;
-    bool parallel_clique_finding;
-    index_t max_clique_enum_vertices;
-    index_t max_clique_enum_edges;
-
-    // Performance options
-    bool use_openmp;
-    int num_threads;
-    bool suppress_partitioner_output;
-    bool suppress_output;  // Suppress all reorderer progress output
-
-    Options()
-        : n_parts(4),
-          imbalance(0.03),
-          preset(MtKahyparPreset::DEFAULT),
-          seed(-1),
-          use_maximal_cliques(true),
-          parallel_clique_finding(true),
-          max_clique_enum_vertices(5000),
-          max_clique_enum_edges(100000),
-          use_openmp(true),
-          num_threads(0),  // 0 = auto-detect
-          suppress_partitioner_output(false),
-          suppress_output(false) {}
+    EccOptions ecc;
+    PartitionOptions partition;
+    RuntimeOptions runtime;
   };
 
+  // Consumer contract (spec D12): the result is permutation-only — HG-DB
+  // never permutes the matrix itself; applying the permutation is the
+  // caller's job.
   struct Result {
-    CSRMatrix reordered_matrix;
     std::vector<index_t> permutation;
     VertexPartition partition;
     Statistics stats;
@@ -63,26 +48,12 @@ class SymmetricDBReorderer {
   // Main pipeline: in-memory matrix
   Result reorder(const CSRMatrix& matrix);
 
-  // Advanced: step-by-step API for fine control
-  Graph create_graph(const CSRMatrix& matrix);
-  CliqueCover find_clique_cover(const Graph& graph);
-  Hypergraph create_hypergraph(const CliqueCover& cover,
-                                bool suppress_output = false);
-  HypergraphPartition partition_hypergraph(const Hypergraph& hg);
-  VertexPartition create_vertex_partition(
-      const HypergraphPartition& cnh_partition, const CliqueCover& cover,
-      index_t n_vertices);
-  std::vector<index_t> create_permutation(const VertexPartition& partition,
-                                          index_t n_vertices);
-  CSRMatrix permute_matrix(const CSRMatrix& matrix,
-                           const std::vector<index_t>& perm);
-
  private:
   Options opts_;
 
-  // Helper components
+  // Helper components, built once in the constructor
   std::unique_ptr<HypergraphPartitioner> partitioner_;
-  std::unique_ptr<CliqueCoverSolver> clique_solver_;
+  std::unique_ptr<EccSolver> ecc_solver_;
 };
 
 }  // namespace hypergraph_reorder

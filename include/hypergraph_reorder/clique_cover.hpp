@@ -1,7 +1,8 @@
-// clique_cover.hpp - Edge-clique cover algorithm (performance critical!)
+// clique_cover.hpp - Clique-cover data structure (dual CSR representation)
 #ifndef HYPERGRAPH_REORDER_CLIQUE_COVER_HPP
 #define HYPERGRAPH_REORDER_CLIQUE_COVER_HPP
 
+#include <map>
 #include <span>
 #include <unordered_map>
 #include <vector>
@@ -24,6 +25,11 @@ class CliqueCover {
   index_t n_vertices() const { return n_vertices_; }
   index_t max_clique_size() const { return max_clique_size_; }
   double avg_clique_size() const;
+
+  // Clique-order histogram of this cover: clique order (size) -> number of
+  // cliques of that order. O(n_cliques). Used by reorder() to populate
+  // Statistics::clique_order_counts.
+  std::map<index_t, index_t> clique_order_counts() const;
 
   // Get members of a clique (zero-copy span)
   std::span<const index_t> get_clique(index_t clique_id) const;
@@ -53,69 +59,7 @@ class CliqueCover {
   std::vector<index_t> vertex_cliques_;      // Size: total incidences
 };
 
-// Clique cover solver
-class CliqueCoverSolver {
- public:
-  struct Options {
-    bool use_maximal_cliques;
-    bool use_parallel;
-    index_t max_clique_enum_vertices;
-    index_t max_clique_enum_edges;
-    bool greedy_only;
-    int num_threads;
-    bool suppress_output;
-
-    Options()
-        : use_maximal_cliques(true),
-          use_parallel(true),
-          max_clique_enum_vertices(5000),
-          max_clique_enum_edges(100000),
-          greedy_only(false),
-          num_threads(-1),
-          suppress_output(false) {}
-  };
-
-  explicit CliqueCoverSolver(const Options& opts = Options());
-
-  // Main algorithm: compute edge-clique cover
-  CliqueCover solve(const Graph& graph);
-
-  // Get solver statistics
-  const Statistics& get_stats() const { return stats_; }
-
- private:
-  Options opts_;
-  Statistics stats_;
-
-  // Phase 1a: Fast triangle enumeration (for large graphs)
-  std::vector<std::vector<index_t>> enumerate_triangles(const Graph& graph);
-
-  // Phase 1b: Find maximal cliques using parallel Bron-Kerbosch
-  std::vector<std::vector<index_t>> find_maximal_cliques(const Graph& graph);
-
-  // Bron-Kerbosch algorithm with pivoting
-  void bron_kerbosch_pivot(const Graph& graph,
-                           std::vector<index_t>& R,  // Current clique
-                           std::vector<index_t>& P,  // Candidates
-                           std::vector<index_t>& X,  // Already processed
-                           std::vector<std::vector<index_t>>& cliques);
-
-  // Phase 2: Greedy clique selection to cover edges
-  std::vector<std::vector<index_t>> select_covering_cliques(
-      const Graph& graph,
-      const std::vector<std::vector<index_t>>& maximal_cliques);
-
-  // Phase 3: Cover remaining edges with 2-cliques
-  void cover_remaining_edges(const Graph& graph,
-                             const std::vector<bool>& covered_edges,
-                             std::vector<std::vector<index_t>>& cliques);
-
-  // Compute edge ID for bitset
-  inline index_t edge_id(index_t u, index_t v, index_t n) const {
-    if (u > v) std::swap(u, v);
-    return u * n + v;
-  }
-};
+// The ECC *solvers* live in ecc.hpp / ecc_*.cpp (EdgeCover, TriEnum, BK).
 
 }  // namespace hypergraph_reorder
 

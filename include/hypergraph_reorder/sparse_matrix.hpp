@@ -69,10 +69,6 @@ class CSRMatrix {
   std::vector<value_t> values_;   // Size: nnz (or 0 if pattern_only)
 };
 
-// Apply permutation to matrix (create permuted copy)
-CSRMatrix permute_matrix(const CSRMatrix& matrix,
-                         const std::vector<index_t>& perm);
-
 }  // namespace hypergraph_reorder
 
 #endif  // HYPERGRAPH_REORDER_SPARSE_MATRIX_HPP

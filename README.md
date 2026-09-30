@@ -43,7 +43,9 @@ from parallax.ordering.general import HGDB, HGDBConfig
 
 config = HGDBConfig(n_parts=8)
 hgdb = HGDB(config=config)
-result = hgdb.order(sparse_matrix)
+# ecc_method selects the edge-clique cover strategy per call:
+#   "EdgeCover" | "TriEnum" | "BK"  (default: "BK")
+result = hgdb.order(sparse_matrix, ecc_method="BK")
 ```
 
 The result contains a `DoublyBordered` structural descriptor with `General`
@@ -61,12 +63,18 @@ result = composed.order(sparse_matrix)
 
 ## Algorithm
 
-1. Convert CSR matrix to an undirected graph.
-2. Compute an edge-clique cover (ECC) — parallel Bron-Kerbosch with pivoting
-   for small graphs, parallel triangle enumeration for larger graphs.
+1. Convert CSR matrix to a canonical simple undirected graph (any symmetric
+   storage — triangular or full — yields the same graph).
+2. Compute an edge-clique cover (ECC) with one of three explicit methods:
+   `EdgeCover` (every edge a 2-clique; ablation baseline), `TriEnum`
+   (triangle candidates), or `BK` (maximal cliques via parallel
+   Bron-Kerbosch; the default).
 3. Build a clique-node hypergraph (CNH) from the ECC.
-4. Partition the CNH with MT-KaHyPar.
+4. Partition the CNH with MT-KaHyPar (connectivity/km1 objective).
 5. Detect vertex separators from the partition.
-6. Construct the DB permutation: diagonal blocks first, separator last.
+6. Construct and return the DB permutation: diagonal blocks first,
+   separator last. The matrix itself is never permuted inside HG-DB —
+   applying the permutation is the caller's job.
 
-See [`ECC.md`](ECC.md) for details on the clique-cover algorithm.
+See [`ECC.md`](ECC.md) for details on the three clique-cover methods, the
+km1 partitioning objective, and the clique-order histogram.

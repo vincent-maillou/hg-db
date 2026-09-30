@@ -28,10 +28,16 @@ mt_kahypar_preset_type_t convert_preset(MtKahyparPreset preset) {
 
 // Thread pool initialization flag
 bool s_initialized = false;
+size_t s_initialized_num_threads = 0;
 }  // namespace
 
-HypergraphPartitioner::HypergraphPartitioner(const Options& opts)
-    : opts_(opts), context_(nullptr) {
+HypergraphPartitioner::HypergraphPartitioner(const PartitionOptions& opts,
+                                             int num_threads,
+                                             bool suppress_output)
+    : opts_(opts),
+      num_threads_(num_threads),
+      suppress_output_(suppress_output),
+      context_(nullptr) {
   init_context();
 }
 
@@ -41,11 +47,21 @@ void HypergraphPartitioner::init_context() {
   // Initialize MT-KaHyPar thread pool (once globally)
   if (!s_initialized) {
     size_t num_threads =
-        opts_.num_threads > 0
-            ? static_cast<size_t>(opts_.num_threads)
+        num_threads_ > 0
+            ? static_cast<size_t>(num_threads_)
             : std::max(1u, std::thread::hardware_concurrency());
     mt_kahypar_initialize(num_threads, true);
     s_initialized = true;
+    s_initialized_num_threads = num_threads;
+  } else if (num_threads_ > 0 &&
+             static_cast<size_t>(num_threads_) != s_initialized_num_threads) {
+    // MT-KaHyPar's thread pool initializes once per process; a second
+    // reorderer asking for a different thread count keeps the first
+    // setting. Warn once (spec §4.6).
+    std::cerr << "Warning: MT-KaHyPar thread pool already initialized with "
+              << s_initialized_num_threads
+              << " threads; ignoring requested " << num_threads_ << "."
+              << std::endl;
   }
 
   // Create context from preset
@@ -64,7 +80,7 @@ void HypergraphPartitioner::init_context() {
   }
 
   // Suppress output if requested
-  if (opts_.suppress_output) {
+  if (suppress_output_) {
     mt_kahypar_error_t error{nullptr, 0, SUCCESS};
     mt_kahypar_set_context_parameter(
         static_cast<mt_kahypar_context_t*>(context_), VERBOSE, "0", &error);
@@ -83,7 +99,7 @@ void HypergraphPartitioner::cleanup_context() {
 
 HypergraphPartition HypergraphPartitioner::partition(const Hypergraph& hg) {
   if (hg.n_nets() == 0) {
-    if (!opts_.suppress_output)
+    if (!suppress_output_)
       std::cout << "Warning: Empty hypergraph, creating trivial partition"
                 << std::endl;
 
@@ -101,7 +117,7 @@ HypergraphPartition HypergraphPartitioner::partition(const Hypergraph& hg) {
     return result;
   }
 
-  if (!opts_.suppress_output)
+  if (!suppress_output_)
     std::cout << "Partitioning CNH: " << hg.n_nodes() << " nodes, " << hg.n_nets()
               << " nets into " << opts_.n_parts << " parts" << std::endl;
 
@@ -190,7 +206,7 @@ HypergraphPartition HypergraphPartitioner::partition(const Hypergraph& hg) {
 
   result.objective = objective;
 
-  if (!opts_.suppress_output) {
+  if (!suppress_output_) {
     std::cout << "Partition objective (km1): " << objective << std::endl;
     std::cout << "Part sizes: ";
     for (auto sz : result.part_sizes) {
@@ -209,7 +225,7 @@ HypergraphPartition HypergraphPartitioner::partition(const Hypergraph& hg) {
 VertexPartition HypergraphPartitioner::create_vertex_partition(
     const HypergraphPartition& cnh_partition, const CliqueCover& cover,
     index_t n_vertices) {
-  if (!opts_.suppress_output)
+  if (!suppress_output_)
     std::cout << "Creating vertex separator from CNH partition..." << std::endl;
 
   VertexPartition result;
@@ -248,7 +264,7 @@ VertexPartition HypergraphPartitioner::create_vertex_partition(
   }
   std::sort(result.separator.begin(), result.separator.end());
 
-  if (!opts_.suppress_output) {
+  if (!suppress_output_) {
     std::cout << "Vertex partition completed:" << std::endl;
     std::cout << "  Part sizes: ";
     for (const auto& part : result.parts) {
