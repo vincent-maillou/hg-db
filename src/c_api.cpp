@@ -12,7 +12,7 @@
 #define HGR_VERSION_MINOR 0
 #endif
 #ifndef HGR_VERSION_PATCH
-#define HGR_VERSION_PATCH 0
+#define HGR_VERSION_PATCH 1
 #endif
 
 using namespace hypergraph_reorder;
