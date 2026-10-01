@@ -113,7 +113,37 @@ Graph Graph::from_symmetric_matrix(const CSRMatrix &matrix) {
     std::sort(adj_list.begin() + adj_ptr[i], adj_list.begin() + adj_ptr[i + 1]);
   }
 
-  return Graph(n, n_edges, std::move(adj_ptr), std::move(adj_list));
+  // Canonicalize to a simple graph: deduplicate adjacency entries (a
+  // full-storage symmetric CSR inserts every neighbor twice) and drop any
+  // diagonal entry that may have slipped in, then recompute the edge count
+  // from the surviving adjacency (spec §4.4 / D5).
+  std::vector<index_t> canonical_ptr(n + 1, 0);
+  std::vector<index_t> canonical_list;
+  canonical_list.reserve(adj_list.size());
+  for (index_t i = 0; i < n; ++i) {
+    auto begin = adj_list.begin() + adj_ptr[i];
+    auto end = adj_list.begin() + adj_ptr[i + 1];
+    auto last = std::unique(begin, end);
+    for (auto it = begin; it != last; ++it) {
+      if (*it != i) {
+        canonical_list.push_back(*it);
+      }
+    }
+    canonical_ptr[i + 1] = static_cast<index_t>(canonical_list.size());
+  }
+  index_t total_deg = static_cast<index_t>(canonical_list.size());
+  n_edges = total_deg / 2;  // every undirected edge contributes 2 to the sum
+
+  Graph graph(n, n_edges, std::move(canonical_ptr), std::move(canonical_list));
+
+#ifndef NDEBUG
+  if (!graph.validate()) {
+    throw HypergraphReorderError(
+        "Graph::from_symmetric_matrix produced an invalid graph");
+  }
+#endif
+
+  return graph;
 }
 
 bool Graph::validate() const {

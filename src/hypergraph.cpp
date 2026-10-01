@@ -52,8 +52,9 @@ Hypergraph Hypergraph::from_clique_cover(const CliqueCover &cover,
 
     if (!cliques.empty()) {
       // Add net (hyperedge) for this vertex
-      // Deduplicate cliques (a vertex might appear in same clique multiple
-      // times due to graph structure)
+      // Deduplicate cliques (cheap safety: a no-op now that the input
+      // graph is canonicalized — a vertex can no longer appear twice in
+      // the same clique's adjacency, but keep it as a guard)
       std::vector<index_t> unique_cliques(cliques.begin(), cliques.end());
       std::sort(unique_cliques.begin(), unique_cliques.end());
       auto last = std::unique(unique_cliques.begin(), unique_cliques.end());
@@ -70,7 +71,9 @@ Hypergraph Hypergraph::from_clique_cover(const CliqueCover &cover,
 
   if (!suppress_output)
     std::cout << "CNH constructed: " << hg.n_nets_
-              << " nets (efficiency: " << (100.0 * hg.n_nets_ / n_vertices)
+              << " nets (efficiency: "
+              << (100.0 * static_cast<double>(hg.n_nets_) /
+                  static_cast<double>(n_vertices))
               << "%)" << std::endl;
 
   return hg;

@@ -11,47 +11,26 @@
 
 namespace hypergraph_reorder {
 
-// MT-KaHyPar preset configuration
-enum class MtKahyparPreset {
-  DEFAULT,        // Fast, good quality (default preset)
-  QUALITY,        // Higher quality, slower
-  DETERMINISTIC,  // Deterministic partitioning
-  LARGE_K         // Optimized for large number of parts
-};
+// MtKahyparPreset and VertexPartition now live in types.hpp.
 
-// Vertex partition (result of converting CNH partition to vertex separator)
-struct VertexPartition {
-  index_t n_parts;
-  std::vector<std::vector<index_t>> parts;  // parts[i] = vertices in part i
-  std::vector<index_t> separator;           // Separator vertices
-
-  index_t separator_size() const { return separator.size(); }
-  double separator_ratio(index_t n_total) const {
-    return static_cast<double>(separator.size()) / n_total;
-  }
+// Options for the CNH partitioning stage. Declared exactly once; the
+// reorderer passes this sub-struct straight through (no field-by-field
+// transcription). Runtime concerns (threads, output) are supplied by the
+// reorderer from RuntimeOptions.
+struct PartitionOptions {
+  index_t n_parts = 4;
+  double imbalance = 0.03;
+  MtKahyparPreset preset = MtKahyparPreset::DEFAULT;
+  int seed = 42;  // fixed default for reproducibility; -1 = random
 };
 
 // Hypergraph partitioner using MT-KaHyPar
 class HypergraphPartitioner {
  public:
-  struct Options {
-    index_t n_parts;
-    double imbalance;
-    MtKahyparPreset preset;  // MT-KaHyPar preset (replaces config file)
-    int seed;
-    bool suppress_output;
-    int num_threads;  // Number of threads for MT-KaHyPar
-
-    Options()
-        : n_parts(4),
-          imbalance(0.03),
-          preset(MtKahyparPreset::DEFAULT),
-          seed(-1),
-          suppress_output(false),
-          num_threads(0) {}  // 0 = auto-detect
-  };
-
-  explicit HypergraphPartitioner(const Options& opts = Options());
+  // The partitioning options plus the runtime fields the partitioner needs
+  // (taken from RuntimeOptions by the reorderer).
+  HypergraphPartitioner(const PartitionOptions& opts, int num_threads,
+                        bool suppress_output);
   ~HypergraphPartitioner();
 
   // Partition hypergraph using MT-KaHyPar
@@ -63,7 +42,9 @@ class HypergraphPartitioner {
       index_t n_vertices);
 
  private:
-  Options opts_;
+  PartitionOptions opts_;
+  int num_threads_;      // 0 = auto-detect
+  bool suppress_output_; // collapses the former suppress_partitioner_output
   void* context_;  // Opaque MT-KaHyPar context
 
   void init_context();

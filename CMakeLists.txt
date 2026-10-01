@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(hypergraph_reorder VERSION 1.0.1 LANGUAGES CXX C)
+project(hypergraph_reorder VERSION 2.0.0 LANGUAGES CXX C)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -50,6 +50,10 @@ add_library(hypergraph_reorder
     src/sparse_matrix.cpp
     src/graph.cpp
     src/clique_cover.cpp
+    src/ecc_common.cpp
+    src/ecc_edge.cpp
+    src/ecc_tri.cpp
+    src/ecc_bk.cpp
     src/hypergraph.cpp
     src/partitioner.cpp
     src/reorderer.cpp
@@ -80,7 +84,7 @@ endif()
 
 set_target_properties(hypergraph_reorder PROPERTIES
     VERSION ${PROJECT_VERSION}
-    SOVERSION 1
+    SOVERSION 2
     PUBLIC_HEADER include/hypergraph_reorder.h
 )
 

@@ -1,5 +1,12 @@
 # Clique Cover / Graph / Hypergraph Performance Improvement Plan
 
+> **Note (2026-10-01):** the codebase has since been refactored (HG-DB v2). The
+> `CliqueCoverSolver` class no longer exists; the algorithms this document
+> analyzes now live in `src/ecc_bk.cpp` (Bron–Kerbosch), `src/ecc_common.cpp`
+> (`select_covering_cliques`, `cover_remaining_edges`), and `src/ecc_tri.cpp`
+> (triangle enumeration). References below to the old file/class layout are
+> historical. The analysis itself remains valid.
+
 ## 1. Purpose
 
 This document updates the original performance-improvement list in light of the Bron–Kerbosch changes already implemented.
