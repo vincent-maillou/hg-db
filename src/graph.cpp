@@ -14,12 +14,16 @@ Graph::Graph(index_t n_vertices) : n_vertices_(n_vertices), n_edges_(0) {
   adj_ptr_.resize(n_vertices + 1, 0);
 }
 
-Graph::Graph(index_t n_vertices, index_t n_edges, std::vector<index_t> adj_ptr,
-             std::vector<index_t> adj_list)
-    : n_vertices_(n_vertices),
-      n_edges_(n_edges),
-      adj_ptr_(std::move(adj_ptr)),
-      adj_list_(std::move(adj_list)) {
+Graph::Graph(
+  index_t n_vertices, 
+  index_t n_edges, 
+  std::vector<index_t> adj_ptr,
+  std::vector<index_t> adj_list
+) : n_vertices_(n_vertices),
+    n_edges_(n_edges),
+    adj_ptr_(std::move(adj_ptr)),
+    adj_list_(std::move(adj_list))
+{
   if (adj_ptr_.size() != static_cast<size_t>(n_vertices + 1)) {
     throw HypergraphReorderError("Invalid adj_ptr size");
   }
@@ -66,6 +70,7 @@ Graph Graph::from_symmetric_matrix(const CSRMatrix &matrix) {
 
   index_t n = matrix.n_rows();
 
+  // Compute degrees and number of edges
   std::vector<index_t> degrees(n, 0);
   index_t n_edges = 0;
 
@@ -87,6 +92,7 @@ Graph Graph::from_symmetric_matrix(const CSRMatrix &matrix) {
     }
   }
 
+  // Build adjacency structure
   std::vector<index_t> adj_ptr(n + 1);
   adj_ptr[0] = 0;
   for (index_t i = 0; i < n; ++i) {
@@ -109,6 +115,7 @@ Graph Graph::from_symmetric_matrix(const CSRMatrix &matrix) {
     }
   }
 
+  // Sort adjacency lists to ensure neighbors are in ascending order
   for (index_t i = 0; i < n; ++i) {
     std::sort(adj_list.begin() + adj_ptr[i], adj_list.begin() + adj_ptr[i + 1]);
   }
@@ -168,13 +175,26 @@ bool Graph::validate() const {
 }
 
 std::vector<index_t> Graph::compute_degeneracy_ordering() const {
-  // Matula-Beck algorithm for degeneracy ordering
+  /* Matula-Beck algorithm for degeneracy ordering
+
+  References:
+  -----------
+  Matula-Beck algorithm:
+  - Matula, D. W., & Beck, L. L. (1983). Smallest-last ordering and clustering and graph coloring algorithms. Journal of the ACM (JACM), 30(3), 417–427. https://doi.org/10.1145/2402.322385
+
+  Usage of Matula-Beck algorithm for degeneracy ordering:
+  - Eppstein, D., Löffler, M., & Strash, D. (2013). Listing All Maximal Cliques in Large Sparse Real-World Graphs. Journal of Experimental Algorithmics (JEA), 18, 3.1:3.1-3.1:3.21. https://doi.org/10.1145/2543629
+
+  */
+
+  // Initialize output list L
   std::vector<index_t> ordering;
   ordering.reserve(n_vertices_);
 
   std::vector<bool> removed(n_vertices_, false);
   std::vector<index_t> current_degrees(n_vertices_);
 
+  // Initialize live degree array with the current degrees of all vertices
   for (index_t i = 0; i < n_vertices_; ++i) {
     current_degrees[i] = degree(i);
   }
@@ -184,6 +204,7 @@ std::vector<index_t> Graph::compute_degeneracy_ordering() const {
     max_degree = std::max(max_degree, d);
   }
 
+  // Create buckets for vertices based on their degrees
   std::vector<std::set<index_t>> buckets(max_degree + 1);
   for (index_t i = 0; i < n_vertices_; ++i) {
     buckets[current_degrees[i]].insert(i);
@@ -191,17 +212,22 @@ std::vector<index_t> Graph::compute_degeneracy_ordering() const {
 
   for (index_t iter = 0; iter < n_vertices_; ++iter) {
     index_t min_deg = 0;
+
+    // Find the smallest non-empty bucket
     while (min_deg <= max_degree && buckets[min_deg].empty()) {
       min_deg++;
     }
 
+    // If all buckets are empty, we are done
     if (min_deg > max_degree) break;
 
+    // Remove a vertex from the smallest non-empty bucket
     index_t v = *buckets[min_deg].begin();
     buckets[min_deg].erase(buckets[min_deg].begin());
     removed[v] = true;
     ordering.push_back(v);
 
+    // Update the degrees of the neighbors of v
     for (auto u : neighbors(v)) {
       if (!removed[u]) {
         index_t old_deg = current_degrees[u];

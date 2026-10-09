@@ -30,6 +30,19 @@ void bron_kerbosch_pivot(const Graph &graph,
                                                            // (timestamping)
                          uint64_t &marker_id  // Current marker ID
 ) {
+  /* Bron-Kerbosch algorithm for maximal cliques enumeration
+  - Cariant with pivoting
+  
+  References:
+  -----------
+  - Bron, C., & Kerbosch, J. (1973). Algorithm 457: Finding all cliques of an undirected graph. Communications of the ACM, 16(9), 575–577. https://doi.org/10.1145/362342.362367
+  - Tomita, E., Tanaka, A., & Takahashi, H. (2006). The worst-case time complexity for generating all maximal cliques and computational experiments. Theoretical Computer Science, Computing and Combinatorics, 363(1), 28–42. https://doi.org/10.1016/j.tcs.2006.06.015
+  - Cazals, F., & Karande, C. (2008). A note on the problem of reporting maximal cliques. Theoretical Computer Science, 407(1), 564–568. https://doi.org/10.1016/j.tcs.2008.05.010
+
+  
+  */
+
+
   // If both sets are empty, R is a maximal clique.
   if (P.empty() && X.empty()) {
     // R is a maximal clique
