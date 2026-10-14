@@ -64,7 +64,8 @@ SymmetricDBReorderer::Result SymmetricDBReorderer::reorder(
   timer.reset();
   HypergraphPartition hg_partition = partitioner_->partition(hg);
   result.stats.time_partition_ms = timer.elapsed_ms();
-  result.stats.km1_objective = hg_partition.objective;
+  result.stats.km1_objective = hg_partition.km1_objective;
+  result.stats.cut_objective = hg_partition.cut_objective;
   if (!quiet)
     std::cout << "Time: " << result.stats.time_partition_ms << " ms"
               << std::endl;

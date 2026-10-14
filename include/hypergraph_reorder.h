@@ -28,6 +28,17 @@ typedef enum {
   HGR_ECC_BK = 2          /* Maximal cliques (Bron-Kerbosch) + greedy cover */
 } hgr_ecc_method_t;
 
+/* MT-KaHyPar partitioning objective for the CNH stage.
+ * Governs what the partition minimizes under the imbalance constraint;
+ * separator extraction is objective-agnostic.
+ * HGR_OBJECTIVE_KM1 (connectivity metric) is the default and the
+ * historical behavior. Value 2 is reserved for a possible future SOED
+ * (SOED requires a MT-KaHyPar build with KAHYPAR_ENABLE_SOED_METRIC). */
+typedef enum {
+  HGR_OBJECTIVE_KM1 = 0, /* sum over nets of (connectivity - 1) */
+  HGR_OBJECTIVE_CUT = 1  /* number of nets spanning >= 2 parts */
+} hgr_objective_t;
+
 /* ECC options */
 typedef struct {
   hgr_ecc_method_t method; /* default HGR_ECC_BK */
@@ -40,6 +51,7 @@ typedef struct {
   double imbalance;
   hgr_preset_t preset;
   int seed; /* default 42; -1 = random */
+  hgr_objective_t objective; /* default HGR_OBJECTIVE_KM1 (added in v3) */
 } hgr_partition_options_t;
 
 /* Runtime options */
@@ -49,14 +61,14 @@ typedef struct {
                           MT-KaHyPar verbose) */
 } hgr_runtime_options_t;
 
-/* Options structure (v2: nested sub-structs, ABI break vs v1) */
+/* Options structure (v3: partition.objective added; ABI break vs v2) */
 typedef struct {
   hgr_ecc_options_t ecc;
   hgr_partition_options_t partition;
   hgr_runtime_options_t runtime;
 } hgr_options_t;
 
-/* Statistics structure (v2: extended, ABI break vs v1) */
+/* Statistics structure (v3: cut_objective added; ABI break vs v2) */
 typedef struct {
   /* Matrix */
   int64_t n_rows, n_cols, nnz;
@@ -81,8 +93,13 @@ typedef struct {
    * km1). Main configuration levers: n_parts (more parts -> larger km1
    * and typically a larger separator), imbalance (tighter -> larger),
    * preset (quality/deterministic trade km1 vs time/reproducibility),
-   * seed (run-to-run variance at fixed config). */
+   * seed (run-to-run variance at fixed config), objective (km1 vs cut). */
   int64_t km1_objective;
+  /* Cut-net metric of the CNH partition: number of nets (original
+   * vertices) whose cliques span >= 2 parts, as reported by MT-KaHyPar.
+   * Reported for every run regardless of the optimized objective.
+   * With unit net weights km1_objective >= cut_objective always. */
+  int64_t cut_objective;
   /* Timings (ms) */
   double time_graph_ms, time_ecc_ms, time_cnh_ms, time_partition_ms,
       time_separator_ms, time_permutation_ms, time_total_ms;

@@ -21,6 +21,7 @@ struct PartitionOptions {
   index_t n_parts = 4;
   double imbalance = 0.03;
   MtKahyparPreset preset = MtKahyparPreset::DEFAULT;
+  MtKahyparObjective objective = MtKahyparObjective::kKm1;  // preserves v2 behavior
   int seed = 42;  // fixed default for reproducibility; -1 = random
 };
 

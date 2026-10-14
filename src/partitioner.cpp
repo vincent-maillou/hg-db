@@ -67,11 +67,27 @@ void HypergraphPartitioner::init_context() {
   // Create context from preset
   context_ = mt_kahypar_context_from_preset(convert_preset(opts_.preset));
 
+  // Map the configured objective to the MT-KaHyPar enum. Strict: an
+  // invalid objective must fail loudly, not silently fall back (an
+  // objective that differs from the requested one would corrupt
+  // scientific A/B comparisons).
+  mt_kahypar_objective_t objective = KM1;
+  switch (opts_.objective) {
+    case MtKahyparObjective::kKm1:
+      objective = KM1;
+      break;
+    case MtKahyparObjective::kCut:
+      objective = CUT;
+      break;
+    default:
+      throw HypergraphReorderError("Invalid MT-KaHyPar partitioning objective");
+  }
+
   // Configure partitioning parameters
   mt_kahypar_set_partitioning_parameters(
       static_cast<mt_kahypar_context_t*>(context_),
       static_cast<mt_kahypar_partition_id_t>(opts_.n_parts), opts_.imbalance,
-      KM1  // Use connectivity (km1) metric
+      objective
   );
 
   // Set seed if specified (global setting)
@@ -109,7 +125,8 @@ HypergraphPartition HypergraphPartitioner::partition(const Hypergraph& hg) {
     for (index_t i = 0; i < hg.n_nodes(); ++i) {
       result.node_partition[i] = i % opts_.n_parts;
     }
-    result.objective = 0;
+    result.km1_objective = 0;
+    result.cut_objective = 0;
     result.part_sizes.resize(opts_.n_parts, 0);
     for (auto p : result.node_partition) {
       result.part_sizes[p]++;
@@ -190,8 +207,11 @@ HypergraphPartition HypergraphPartitioner::partition(const Hypergraph& hg) {
   std::vector<mt_kahypar_partition_id_t> partition(num_nodes);
   mt_kahypar_get_partition(partitioned_hg, partition.data());
 
-  // Get objective value (connectivity metric)
-  mt_kahypar_hyperedge_weight_t objective = mt_kahypar_km1(partitioned_hg);
+  // Get both metrics of the achieved partition. They are reported for
+  // every run regardless of the optimized objective so km1-runs and
+  // cut-runs stay comparable.
+  const mt_kahypar_hyperedge_weight_t km1 = mt_kahypar_km1(partitioned_hg);
+  const mt_kahypar_hyperedge_weight_t cut = mt_kahypar_cut(partitioned_hg);
 
   // Convert to our result format
   HypergraphPartition result;
@@ -204,10 +224,12 @@ HypergraphPartition HypergraphPartitioner::partition(const Hypergraph& hg) {
     result.part_sizes[partition[i]]++;
   }
 
-  result.objective = objective;
+  result.km1_objective = km1;
+  result.cut_objective = cut;
 
   if (!suppress_output_) {
-    std::cout << "Partition objective (km1): " << objective << std::endl;
+    std::cout << "Partition objectives: km1=" << km1 << " cut=" << cut
+              << std::endl;
     std::cout << "Part sizes: ";
     for (auto sz : result.part_sizes) {
       std::cout << sz << " ";

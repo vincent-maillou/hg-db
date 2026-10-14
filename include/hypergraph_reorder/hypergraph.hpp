@@ -56,7 +56,13 @@ class Hypergraph {
 struct HypergraphPartition {
   index_t n_parts;
   std::vector<index_t> node_partition;  // node_id -> part_id
-  index_t objective;                    // Cutsize (number of cut nets)
+
+  // Metrics of the achieved CNH partition (unit net weights):
+  //   km1_objective: sum over nets of (connectivity - 1)   [connectivity metric]
+  //   cut_objective: number of nets spanning >= 2 parts     [cut-net metric]
+  // Reported for every run regardless of the optimized objective.
+  index_t km1_objective = 0;
+  index_t cut_objective = 0;
 
   std::vector<index_t> part_sizes;
 };

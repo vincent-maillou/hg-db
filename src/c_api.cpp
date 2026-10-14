@@ -1,6 +1,7 @@
 #include <cstring>
 #include <exception>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -9,7 +10,7 @@
 
 /* Fallbacks when the build system does not inject the project version */
 #ifndef HGR_VERSION_MAJOR
-#define HGR_VERSION_MAJOR 2
+#define HGR_VERSION_MAJOR 3
 #endif
 #ifndef HGR_VERSION_MINOR
 #define HGR_VERSION_MINOR 0
@@ -93,6 +94,21 @@ extern "C" hgr_reorderer_t* hgr_create(const hgr_options_t* opts) {
           cpp_opts.partition.preset = MtKahyparPreset::DEFAULT;
           break;
       }
+      // Objective: strict mapping — unlike the preset (lenient, historical),
+      // an invalid objective must fail loudly. A silent fallback would
+      // corrupt A/B benchmark comparisons without any signal.
+      switch (opts->partition.objective) {
+        case HGR_OBJECTIVE_KM1:
+          cpp_opts.partition.objective = MtKahyparObjective::kKm1;
+          break;
+        case HGR_OBJECTIVE_CUT:
+          cpp_opts.partition.objective = MtKahyparObjective::kCut;
+          break;
+        default:
+          throw std::invalid_argument(
+              "hgr_create: invalid partition.objective (expected "
+              "HGR_OBJECTIVE_KM1 or HGR_OBJECTIVE_CUT)");
+      }
 
       // Runtime options
       cpp_opts.runtime.num_threads = opts->runtime.num_threads;
@@ -148,6 +164,10 @@ extern "C" void hgr_default_options(hgr_options_t* opts) {
       opts->partition.preset = HGR_PRESET_DEFAULT;
       break;
   }
+  opts->partition.objective =
+      cpp_opts.partition.objective == MtKahyparObjective::kCut
+          ? HGR_OBJECTIVE_CUT
+          : HGR_OBJECTIVE_KM1;
   opts->partition.seed = cpp_opts.partition.seed;
 
   opts->runtime.num_threads = cpp_opts.runtime.num_threads;
@@ -244,6 +264,7 @@ extern "C" int hgr_get_statistics(hgr_result_t* result,
     stats->separator_size = s.separator_size;
     stats->separator_ratio = s.separator_ratio;
     stats->km1_objective = s.km1_objective;
+    stats->cut_objective = s.cut_objective;
     stats->time_graph_ms = s.time_graph_ms;
     stats->time_ecc_ms = s.time_ecc_ms;
     stats->time_cnh_ms = s.time_cnh_ms;

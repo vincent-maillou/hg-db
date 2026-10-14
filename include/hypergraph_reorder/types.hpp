@@ -53,6 +53,16 @@ enum class MtKahyparPreset {
   LARGE_K         // Optimized for large number of parts
 };
 
+// MT-KaHyPar partitioning objective. The objective governs what the CNH
+// partition minimizes under the imbalance constraint; separator extraction
+// and everything downstream are objective-agnostic.
+//  - kKm1: connectivity metric, sum over nets of (connectivity - 1).
+//    Default (historical behavior).
+//  - kCut: cut-net metric, number of nets spanning >= 2 parts.
+// SOED is not exposed: the Parallax MT-KaHyPar build does not enable
+// KAHYPAR_ENABLE_SOED_METRIC. Value 2 is reserved for a future addition.
+enum class MtKahyparObjective { kKm1, kCut };
+
 // Vertex partition (result of converting a CNH partition to a vertex
 // separator). Lives in types.hpp alongside the other shared value types.
 struct VertexPartition {
@@ -115,6 +125,13 @@ struct Statistics {
   // MT-KaHyPar: sum over nets of (connectivity - 1). This is the quantity
   // MT-KaHyPar minimizes; it is NOT the separator size.
   index_t km1_objective = 0;
+  // Cut-net metric of the CNH partition as reported by MT-KaHyPar:
+  // number of nets (original vertices) whose cliques span >= 2 parts.
+  // Reported for every run regardless of the optimized objective, so
+  // km1-runs and cut-runs stay comparable. With unit net weights
+  // km1_objective >= cut_objective always (equality iff no net spans
+  // more than 2 parts).
+  index_t cut_objective = 0;
 
   // Timing breakdown (milliseconds) — seven stages including the total,
   // which is the wall clock around the whole reorder() call.
