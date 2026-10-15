@@ -45,6 +45,18 @@ class CliqueCover {
   }
   const std::vector<index_t>& vertex_cliques() const { return vertex_cliques_; }
 
+  // Optional per-clique edge mass (v4, edge_fill_mass weighting): mass[i]
+  // = number of graph edges first-covered by clique i (Phase 2 greedy
+  // selection) or 1 for a Phase-3 remainder 2-clique; sum == n_edges.
+  // Populated by every ECC solver; absence is a solver bug.
+  void set_edge_mass(std::vector<index_t>&& masses) {
+    edge_mass_ = std::move(masses);
+  }
+  const std::vector<index_t>& edge_mass() const { return edge_mass_; }
+  bool has_edge_mass() const {
+    return edge_mass_.size() == static_cast<size_t>(n_cliques_);
+  }
+
  private:
   index_t n_cliques_;
   index_t n_vertices_;
@@ -57,6 +69,9 @@ class CliqueCover {
   // Vertex-centric representation: vertex_id -> cliques
   std::vector<index_t> vertex_cliques_ptr_;  // Size: n_vertices + 1
   std::vector<index_t> vertex_cliques_;      // Size: total incidences
+
+  // Optional per-clique edge mass (empty when not recorded)
+  std::vector<index_t> edge_mass_;
 };
 
 // The ECC *solvers* live in ecc.hpp / ecc_*.cpp (EdgeCover, TriEnum, BK).

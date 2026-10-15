@@ -19,7 +19,8 @@ namespace detail {
 std::vector<std::vector<index_t>> select_covering_cliques(
     const Graph &graph,
     const std::vector<std::vector<index_t>> &maximal_cliques,
-    std::set<std::pair<index_t, index_t>> &covered_edges) {
+    std::set<std::pair<index_t, index_t>> &covered_edges,
+    std::vector<index_t> &selected_mass) {
   // Sort cliques by size (largest first)
   std::vector<std::pair<index_t, index_t>> clique_sizes;
   for (size_t i = 0; i < maximal_cliques.size(); ++i) {
@@ -50,6 +51,10 @@ std::vector<std::vector<index_t>> select_covering_cliques(
     // Add clique if it covers new edges
     if (uncovered_count > 0) {
       selected_cliques.push_back(clique);
+      // Edge mass: the number of edges this clique first-covered. Each
+      // edge is counted exactly once at the moment it first becomes
+      // covered, so the masses sum to the number of Phase-2-covered edges.
+      selected_mass.push_back(uncovered_count);
 
       // Mark edges as covered
       for (size_t i = 0; i < clique.size(); ++i) {
@@ -70,7 +75,8 @@ std::vector<std::vector<index_t>> select_covering_cliques(
 void cover_remaining_edges(
     const Graph &graph,
     const std::set<std::pair<index_t, index_t>> &covered_edges,
-    std::vector<std::vector<index_t>> &cliques) {
+    std::vector<std::vector<index_t>> &cliques,
+    std::vector<index_t> &masses) {
   // Simple approach: iterate all edges and add 2-cliques for uncovered ones
   std::set<std::pair<index_t, index_t>> edge_set;
 
@@ -94,9 +100,11 @@ void cover_remaining_edges(
     }
   }
 
-  // Add 2-cliques for remaining edges
+  // Add 2-cliques for remaining edges; each covers exactly one edge,
+  // so its edge mass is 1 (keeps masses index-aligned with cliques).
   for (const auto &[u, v] : edge_set) {
     cliques.push_back({u, v});
+    masses.push_back(1);
   }
 }
 

@@ -22,6 +22,10 @@ struct PartitionOptions {
   double imbalance = 0.03;
   MtKahyparPreset preset = MtKahyparPreset::DEFAULT;
   MtKahyparObjective objective = MtKahyparObjective::kKm1;  // preserves v2 behavior
+  // What the partitioner balances: hypernode (clique) weights under the
+  // selected scheme (v4). Single source of the default; the C API and
+  // the Python config inherit it via hgr_default_options.
+  NodeWeighting node_weighting = NodeWeighting::kCliqueSize;
   int seed = 42;  // fixed default for reproducibility; -1 = random
 };
 

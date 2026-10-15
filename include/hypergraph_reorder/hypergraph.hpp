@@ -20,6 +20,9 @@ class Hypergraph {
   index_t n_nodes() const { return n_nodes_; }
   index_t n_nets() const { return n_nets_; }
   index_t total_pins() const { return total_pins_; }
+  // Total hypernode weight W under the scheme used at construction
+  // (stored, not re-summed).
+  index_t total_node_weight() const { return total_node_weight_; }
 
   // Access hypergraph structure (kahyapr compatible format)
   const std::vector<size_t> &edge_indices() const { return edge_indices_; }
@@ -33,14 +36,19 @@ class Hypergraph {
   // Get nodes connected by a net (zero-copy span)
   std::span<const index_t> net_pins(index_t net_id) const;
 
-  // Create CNH from clique cover (optimized with pre-built mapping)
+  // Create CNH from clique cover (optimized with pre-built mapping).
+  // The weighting scheme selects what a hypernode (clique) weighs for the
+  // partitioner's balance constraint (v4); default kCliqueSize.
   static Hypergraph from_clique_cover(const CliqueCover &cover,
-                                      bool suppress_output = false);
+                                      bool suppress_output = false,
+                                      NodeWeighting weighting =
+                                          NodeWeighting::kCliqueSize);
 
  private:
   index_t n_nodes_;     // Number of hypernodes (cliques)
   index_t n_nets_;      // Number of hyperedges (original vertices)
   index_t total_pins_;  // Total number of pins
+  index_t total_node_weight_;  // W = sum of node weights (v4)
 
   // Hypergraph in KaHyPar format (zero-copy compatible)
   std::vector<size_t> edge_indices_;  // Size: n_nets + 1
@@ -63,6 +71,11 @@ struct HypergraphPartition {
   // Reported for every run regardless of the optimized objective.
   index_t km1_objective = 0;
   index_t cut_objective = 0;
+
+  // Imbalance actually handed to MT-KaHyPar: the requested value, or the
+  // minimum feasible value when a single hypernode exceeded a block's
+  // weight budget and epsilon was auto-relaxed (v4, see partitioner).
+  double effective_imbalance = 0.0;
 
   std::vector<index_t> part_sizes;
 };

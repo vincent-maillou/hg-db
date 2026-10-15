@@ -81,17 +81,23 @@ namespace detail {
 
 // Phase 2: Greedy clique selection to cover edges (largest first).
 // Returns the selected cliques and, via *covered, the set of edges they
-// cover (consumed by Phase 3).
+// cover (consumed by Phase 3). Via *selected_mass, records each accepted
+// clique's uncovered_count (the number of edges it first-covered — the
+// edge_fill_mass hypernode weight); index-aligned with the returned
+// selected cliques.
 std::vector<std::vector<index_t>> select_covering_cliques(
     const Graph& graph,
     const std::vector<std::vector<index_t>>& maximal_cliques,
-    std::set<std::pair<index_t, index_t>>& covered);
+    std::set<std::pair<index_t, index_t>>& covered,
+    std::vector<index_t>& selected_mass);
 
-// Phase 3: Cover remaining (uncovered) edges with 2-cliques.
+// Phase 3: Cover remaining (uncovered) edges with 2-cliques. Appends 1
+// per added 2-clique to *masses, keeping it index-aligned with cliques.
 void cover_remaining_edges(
     const Graph& graph,
     const std::set<std::pair<index_t, index_t>>& covered_edges,
-    std::vector<std::vector<index_t>>& cliques);
+    std::vector<std::vector<index_t>>& cliques,
+    std::vector<index_t>& masses);
 
 }  // namespace detail
 

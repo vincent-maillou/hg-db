@@ -63,6 +63,16 @@ enum class MtKahyparPreset {
 // KAHYPAR_ENABLE_SOED_METRIC. Value 2 is reserved for a future addition.
 enum class MtKahyparObjective { kKm1, kCut };
 
+// Hypernode (clique) weighting for the CNH partition stage. Governs what
+// MT-KaHyPar balances; the imbalance parameter bounds part weights under
+// the selected scheme (see ECC.md "Hypernode weighting").
+enum class NodeWeighting {
+  kUnit,          // w_i = 1                     (ablation baseline)
+  kCliqueSize,    // w_i = |C_i|                 (default)
+  kVertexShare,   // per-vertex unit split over cliques (largest remainder)
+  kEdgeFillMass   // w_i = #edges first-covered by C_i
+};
+
 // Vertex partition (result of converting a CNH partition to a vertex
 // separator). Lives in types.hpp alongside the other shared value types.
 struct VertexPartition {
@@ -132,6 +142,17 @@ struct Statistics {
   // km1_objective >= cut_objective always (equality iff no net spans
   // more than 2 parts).
   index_t cut_objective = 0;
+
+  // Hypernode weighting (v4). node_weighting_used echoes the scheme the
+  // partitioner balanced under; total_node_weight is W = sum_i w_i under
+  // that scheme; effective_imbalance is eps after auto-relax (>= the
+  // requested imbalance; see partitioner); achieved_block_imbalance is
+  // max(part sizes) / (n_interior / k) — the vertex-level balance the DB
+  // output actually cares about (0.0 when there are no interior vertices).
+  NodeWeighting node_weighting_used = NodeWeighting::kCliqueSize;
+  index_t total_node_weight = 0;         // W under the used scheme
+  double effective_imbalance = 0.0;      // eps after auto-relax
+  double achieved_block_imbalance = 0.0; // max part / (n_interior / k)
 
   // Timing breakdown (milliseconds) — seven stages including the total,
   // which is the wall clock around the whole reorder() call.

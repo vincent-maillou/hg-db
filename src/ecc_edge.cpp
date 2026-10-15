@@ -23,10 +23,12 @@ CliqueCover EdgeCoverEccSolver::solve(const Graph& graph) {
 
   // All edges are uncovered by construction — pass an empty covered set
   // (the pre-fix behavior, deliberately: every edge becomes a 2-clique
-  // either way).
+  // either way). Each remainder 2-clique covers exactly one edge, so the
+  // recorded mass is all-ones with n_edges entries.
   std::set<std::pair<index_t, index_t>> covered;
   std::vector<std::vector<index_t>> all_cliques;
-  detail::cover_remaining_edges(graph, covered, all_cliques);
+  std::vector<index_t> masses;
+  detail::cover_remaining_edges(graph, covered, all_cliques, masses);
 
   if (!opts_.suppress_output)
     std::cout << "Total cliques: " << all_cliques.size() << std::endl;
@@ -34,7 +36,9 @@ CliqueCover EdgeCoverEccSolver::solve(const Graph& graph) {
   stats_.time_ecc_ms = timer.elapsed_ms();
   stats_.n_cliques = all_cliques.size();
 
-  return CliqueCover(graph.n_vertices(), std::move(all_cliques));
+  CliqueCover cover(graph.n_vertices(), std::move(all_cliques));
+  cover.set_edge_mass(std::move(masses));
+  return cover;
 }
 
 const Statistics& EdgeCoverEccSolver::get_stats() const { return stats_; }

@@ -127,6 +127,7 @@ HypergraphPartition HypergraphPartitioner::partition(const Hypergraph& hg) {
     }
     result.km1_objective = 0;
     result.cut_objective = 0;
+    result.effective_imbalance = opts_.imbalance;  // no relax on this path
     result.part_sizes.resize(opts_.n_parts, 0);
     for (auto p : result.node_partition) {
       result.part_sizes[p]++;
@@ -178,6 +179,58 @@ HypergraphPartition HypergraphPartitioner::partition(const Hypergraph& hg) {
     node_weights = node_weights_conv.data();
   }
 
+  // ---- Epsilon auto-relax (v4, spec D3) --------------------------------
+  // MT-KaHyPar's balance constraint is sum_{i in block} w_i <= (1+eps)*W/k.
+  // A single hypernode heavier than (1+eps)*W/k makes the instance
+  // infeasible; rather than failing, relax eps to the minimum feasible
+  // value and warn (unconditional stderr, like the thread-pool warning).
+  // eps_eff is reported back through HypergraphPartition.
+  const double W = static_cast<double>(hg.total_node_weight());
+  double w_max = 0.0;
+  for (const auto& w : hg.node_weights()) {
+    w_max = std::max(w_max, static_cast<double>(w));
+  }
+  const double k = static_cast<double>(opts_.n_parts);
+  double eps_eff = opts_.imbalance;
+  if (W > 0.0) {
+    const double min_feasible = k * w_max / W - 1.0;
+    if (min_feasible > eps_eff) {
+      eps_eff = min_feasible;
+      std::cerr << "Warning: node weight " << static_cast<long long>(w_max)
+                << " exceeds the block budget at imbalance "
+                << opts_.imbalance << "; relaxed imbalance " << opts_.imbalance
+                << " -> " << eps_eff << " (" << static_cast<long long>(W)
+                << " total node weight, k=" << opts_.n_parts << ")"
+                << std::endl;
+    }
+  }
+  // Re-issue the partitioning parameters with the effective epsilon.
+  // Always re-issued (not only on relax) so there is exactly one code
+  // path that sets epsilon for the partition call; init_context() keeps
+  // responsibility for the initial value.
+  //
+  // Caveat: the LARGE_K preset may apply different block-weight semantics
+  // internally (perfectly balanced blocks); the relaxation remains a
+  // necessary-condition guard in that case.
+  {
+    mt_kahypar_objective_t objective = KM1;
+    switch (opts_.objective) {
+      case MtKahyparObjective::kKm1:
+        objective = KM1;
+        break;
+      case MtKahyparObjective::kCut:
+        objective = CUT;
+        break;
+      default:
+        throw HypergraphReorderError(
+            "Invalid MT-KaHyPar partitioning objective");
+    }
+    mt_kahypar_set_partitioning_parameters(
+        static_cast<mt_kahypar_context_t*>(context_),
+        static_cast<mt_kahypar_partition_id_t>(opts_.n_parts), eps_eff,
+        objective);
+  }
+
   // Create MT-KaHyPar hypergraph
   mt_kahypar_error_t error{nullptr, 0, SUCCESS};
   mt_kahypar_hypergraph_t mt_hg = mt_kahypar_create_hypergraph(
@@ -226,6 +279,7 @@ HypergraphPartition HypergraphPartitioner::partition(const Hypergraph& hg) {
 
   result.km1_objective = km1;
   result.cut_objective = cut;
+  result.effective_imbalance = eps_eff;
 
   if (!suppress_output_) {
     std::cout << "Partition objectives: km1=" << km1 << " cut=" << cut

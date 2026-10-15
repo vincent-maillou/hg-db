@@ -1,5 +1,6 @@
 #include "hypergraph_reorder/reorderer.hpp"
 
+#include <algorithm>
 #include <iostream>
 
 namespace hypergraph_reorder {
@@ -51,7 +52,8 @@ SymmetricDBReorderer::Result SymmetricDBReorderer::reorder(
   // [3/6] Create clique-node hypergraph
   if (!quiet) std::cout << "\n[3/6] Creating clique-node hypergraph" << std::endl;
   timer.reset();
-  Hypergraph hg = Hypergraph::from_clique_cover(cover, quiet);
+  Hypergraph hg =
+      Hypergraph::from_clique_cover(cover, quiet, opts_.partition.node_weighting);
   result.stats.time_cnh_ms = timer.elapsed_ms();
   result.stats.n_hypernodes = hg.n_nodes();
   result.stats.n_hyperedges = hg.n_nets();
@@ -66,6 +68,9 @@ SymmetricDBReorderer::Result SymmetricDBReorderer::reorder(
   result.stats.time_partition_ms = timer.elapsed_ms();
   result.stats.km1_objective = hg_partition.km1_objective;
   result.stats.cut_objective = hg_partition.cut_objective;
+  result.stats.node_weighting_used = opts_.partition.node_weighting;
+  result.stats.total_node_weight = hg.total_node_weight();
+  result.stats.effective_imbalance = hg_partition.effective_imbalance;
   if (!quiet)
     std::cout << "Time: " << result.stats.time_partition_ms << " ms"
               << std::endl;
@@ -81,8 +86,27 @@ SymmetricDBReorderer::Result SymmetricDBReorderer::reorder(
   result.stats.separator_size = vertex_partition.separator_size();
   result.stats.separator_ratio =
       vertex_partition.separator_ratio(graph.n_vertices());
+  result.stats.part_sizes.clear();
   for (const auto& part : vertex_partition.parts) {
     result.stats.part_sizes.push_back(part.size());
+  }
+  // Vertex-level balance the DB output cares about (D10): largest block
+  // relative to the perfectly balanced interior. n_interior counts the
+  // vertices that landed in a diagonal block (everything but the
+  // separator); 0.0 when there is nothing to balance.
+  const index_t n_interior =
+      graph.n_vertices() - vertex_partition.separator_size();
+  if (vertex_partition.n_parts > 0 && n_interior > 0) {
+    index_t max_part = 0;
+    for (const auto& part : vertex_partition.parts) {
+      max_part = std::max(max_part, static_cast<index_t>(part.size()));
+    }
+    result.stats.achieved_block_imbalance =
+        static_cast<double>(max_part) /
+        (static_cast<double>(n_interior) /
+         static_cast<double>(vertex_partition.n_parts));
+  } else {
+    result.stats.achieved_block_imbalance = 0.0;
   }
   if (!quiet)
     std::cout << "Time: " << result.stats.time_separator_ms << " ms"

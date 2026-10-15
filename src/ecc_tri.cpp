@@ -107,11 +107,12 @@ CliqueCover TriangleEnumEccSolver::solve(const Graph& graph) {
   if (!opts_.suppress_output)
     std::cout << "Selecting covering triangles..." << std::endl;
   std::set<std::pair<index_t, index_t>> covered;
+  std::vector<index_t> masses;
   std::vector<std::vector<index_t>> all_cliques =
-      detail::select_covering_cliques(graph, all_triangles, covered);
+      detail::select_covering_cliques(graph, all_triangles, covered, masses);
 
   // Phase 3: Cover remaining edges with 2-cliques
-  detail::cover_remaining_edges(graph, covered, all_cliques);
+  detail::cover_remaining_edges(graph, covered, all_cliques, masses);
 
   if (!opts_.suppress_output)
     std::cout << "Total cliques: " << all_cliques.size() << std::endl;
@@ -119,7 +120,9 @@ CliqueCover TriangleEnumEccSolver::solve(const Graph& graph) {
   stats_.time_ecc_ms = timer.elapsed_ms();
   stats_.n_cliques = all_cliques.size();
 
-  return CliqueCover(graph.n_vertices(), std::move(all_cliques));
+  CliqueCover cover(graph.n_vertices(), std::move(all_cliques));
+  cover.set_edge_mass(std::move(masses));
+  return cover;
 }
 
 const Statistics& TriangleEnumEccSolver::get_stats() const { return stats_; }
