@@ -39,6 +39,17 @@ typedef enum {
   HGR_OBJECTIVE_CUT = 1  /* number of nets spanning >= 2 parts */
 } hgr_objective_t;
 
+/* Hypernode (clique) weighting for the CNH partition stage: what
+ * MT-KaHyPar balances. The imbalance bound applies to part weights under
+ * the selected scheme (see hgr_statistics_t::node_weighting_used and the
+ * per-scheme W invariants documented in ECC.md "Hypernode weighting"). */
+typedef enum {
+  HGR_NODE_WEIGHTING_UNIT = 0,          /* w_i = 1 (ablation baseline, v3 behavior) */
+  HGR_NODE_WEIGHTING_CLIQUE_SIZE = 1,   /* w_i = |C_i| (default, v4) */
+  HGR_NODE_WEIGHTING_VERTEX_SHARE = 2,  /* per-vertex unit split over cliques */
+  HGR_NODE_WEIGHTING_EDGE_FILL_MASS = 3 /* w_i = #edges first-covered by C_i */
+} hgr_node_weighting_t;
+
 /* ECC options */
 typedef struct {
   hgr_ecc_method_t method; /* default HGR_ECC_BK */
@@ -48,10 +59,15 @@ typedef struct {
 /* Partitioning options */
 typedef struct {
   int64_t n_parts;
+  /* Imbalance bound for part weights under the selected node weighting
+   * scheme. May be auto-relaxed when a single hypernode exceeds a block's
+   * weight budget — the value actually used is reported as
+   * hgr_statistics_t::effective_imbalance. */
   double imbalance;
   hgr_preset_t preset;
-  int seed; /* default 42; -1 = random */
-  hgr_objective_t objective; /* default HGR_OBJECTIVE_KM1 (added in v3) */
+  int seed;                             /* default 42; -1 = random */
+  hgr_objective_t objective;            /* v3 */
+  hgr_node_weighting_t node_weighting;  /* v4: what the partitioner balances */
 } hgr_partition_options_t;
 
 /* Runtime options */
@@ -61,14 +77,15 @@ typedef struct {
                           MT-KaHyPar verbose) */
 } hgr_runtime_options_t;
 
-/* Options structure (v3: partition.objective added; ABI break vs v2) */
+/* Options structure (v4: partition.node_weighting added; ABI break vs v3) */
 typedef struct {
   hgr_ecc_options_t ecc;
   hgr_partition_options_t partition;
   hgr_runtime_options_t runtime;
 } hgr_options_t;
 
-/* Statistics structure (v3: cut_objective added; ABI break vs v2) */
+/* Statistics structure (v4: node weighting observables added; ABI break
+ * vs v3) */
 typedef struct {
   /* Matrix */
   int64_t n_rows, n_cols, nnz;
@@ -100,6 +117,18 @@ typedef struct {
    * Reported for every run regardless of the optimized objective.
    * With unit net weights km1_objective >= cut_objective always. */
   int64_t cut_objective;
+  /* Node weighting (v4). node_weighting_used echoes the scheme the
+   * partitioner balanced under; total_node_weight is W = sum_i w_i under
+   * that scheme (unit: n_cliques, clique_size: total_pins, vertex_share:
+   * SCALE*n_nonisolated, edge_fill_mass: n_edges); effective_imbalance is
+   * the imbalance actually used after auto-relax (>= the requested one);
+   * achieved_block_imbalance is max(part sizes) / (n_interior / k) — the
+   * vertex-level balance the doubly-bordered output cares about (0.0
+   * when there are no interior vertices). */
+  hgr_node_weighting_t node_weighting_used;
+  int64_t total_node_weight;
+  double effective_imbalance;
+  double achieved_block_imbalance;
   /* Timings (ms) */
   double time_graph_ms, time_ecc_ms, time_cnh_ms, time_partition_ms,
       time_separator_ms, time_permutation_ms, time_total_ms;

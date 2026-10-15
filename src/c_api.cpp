@@ -10,7 +10,7 @@
 
 /* Fallbacks when the build system does not inject the project version */
 #ifndef HGR_VERSION_MAJOR
-#define HGR_VERSION_MAJOR 3
+#define HGR_VERSION_MAJOR 4
 #endif
 #ifndef HGR_VERSION_MINOR
 #define HGR_VERSION_MINOR 0
@@ -109,6 +109,28 @@ extern "C" hgr_reorderer_t* hgr_create(const hgr_options_t* opts) {
               "hgr_create: invalid partition.objective (expected "
               "HGR_OBJECTIVE_KM1 or HGR_OBJECTIVE_CUT)");
       }
+      // Node weighting: strict mapping, same rationale as the objective —
+      // a silent fallback would corrupt A/B benchmark comparisons.
+      switch (opts->partition.node_weighting) {
+        case HGR_NODE_WEIGHTING_UNIT:
+          cpp_opts.partition.node_weighting = NodeWeighting::kUnit;
+          break;
+        case HGR_NODE_WEIGHTING_CLIQUE_SIZE:
+          cpp_opts.partition.node_weighting = NodeWeighting::kCliqueSize;
+          break;
+        case HGR_NODE_WEIGHTING_VERTEX_SHARE:
+          cpp_opts.partition.node_weighting = NodeWeighting::kVertexShare;
+          break;
+        case HGR_NODE_WEIGHTING_EDGE_FILL_MASS:
+          cpp_opts.partition.node_weighting = NodeWeighting::kEdgeFillMass;
+          break;
+        default:
+          throw std::invalid_argument(
+              "hgr_create: invalid partition.node_weighting (expected "
+              "HGR_NODE_WEIGHTING_UNIT, HGR_NODE_WEIGHTING_CLIQUE_SIZE, "
+              "HGR_NODE_WEIGHTING_VERTEX_SHARE, or "
+              "HGR_NODE_WEIGHTING_EDGE_FILL_MASS)");
+      }
 
       // Runtime options
       cpp_opts.runtime.num_threads = opts->runtime.num_threads;
@@ -168,6 +190,21 @@ extern "C" void hgr_default_options(hgr_options_t* opts) {
       cpp_opts.partition.objective == MtKahyparObjective::kCut
           ? HGR_OBJECTIVE_CUT
           : HGR_OBJECTIVE_KM1;
+  switch (cpp_opts.partition.node_weighting) {
+    case NodeWeighting::kUnit:
+      opts->partition.node_weighting = HGR_NODE_WEIGHTING_UNIT;
+      break;
+    case NodeWeighting::kCliqueSize:
+      opts->partition.node_weighting = HGR_NODE_WEIGHTING_CLIQUE_SIZE;
+      break;
+    case NodeWeighting::kVertexShare:
+      opts->partition.node_weighting = HGR_NODE_WEIGHTING_VERTEX_SHARE;
+      break;
+    case NodeWeighting::kEdgeFillMass:
+    default:
+      opts->partition.node_weighting = HGR_NODE_WEIGHTING_EDGE_FILL_MASS;
+      break;
+  }
   opts->partition.seed = cpp_opts.partition.seed;
 
   opts->runtime.num_threads = cpp_opts.runtime.num_threads;
@@ -265,6 +302,24 @@ extern "C" int hgr_get_statistics(hgr_result_t* result,
     stats->separator_ratio = s.separator_ratio;
     stats->km1_objective = s.km1_objective;
     stats->cut_objective = s.cut_objective;
+    switch (s.node_weighting_used) {
+      case NodeWeighting::kUnit:
+        stats->node_weighting_used = HGR_NODE_WEIGHTING_UNIT;
+        break;
+      case NodeWeighting::kCliqueSize:
+        stats->node_weighting_used = HGR_NODE_WEIGHTING_CLIQUE_SIZE;
+        break;
+      case NodeWeighting::kVertexShare:
+        stats->node_weighting_used = HGR_NODE_WEIGHTING_VERTEX_SHARE;
+        break;
+      case NodeWeighting::kEdgeFillMass:
+      default:
+        stats->node_weighting_used = HGR_NODE_WEIGHTING_EDGE_FILL_MASS;
+        break;
+    }
+    stats->total_node_weight = s.total_node_weight;
+    stats->effective_imbalance = s.effective_imbalance;
+    stats->achieved_block_imbalance = s.achieved_block_imbalance;
     stats->time_graph_ms = s.time_graph_ms;
     stats->time_ecc_ms = s.time_ecc_ms;
     stats->time_cnh_ms = s.time_cnh_ms;

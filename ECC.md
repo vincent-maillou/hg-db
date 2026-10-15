@@ -122,10 +122,112 @@ After the clique cover is computed:
 2. Deduplicate cliques per vertex via `sort + unique` (a cheap safety no-op
    now that the input graph is canonicalized).
 3. Skip vertices with zero cliques (isolated vertices).
-4. All hypernodes (cliques) have **unit weight** (1).
+4. Hypernode (clique) weights follow the selected **node weighting scheme**
+   (v4) — see [Hypernode weighting](#hypernode-weighting); `unit` is the
+   v3 behavior.
 5. All hyperedges (nets) have **unit weight** (1).
 6. The `net_to_vertex_` mapping enables reverse lookup from hyperedge to
    original vertex.
+
+## Hypernode weighting (v4)
+
+MT-KaHyPar's balance constraint is defined over **hypernode weights**:
+
+```
+sum_{i in block} w_i  <=  (1 + eps) * W / k,      W = sum_i w_i
+```
+
+The `node_weighting` option selects what a hypernode (clique) weighs —
+i.e. what the partitioner *balances*. With the v3 default (`unit`),
+`imbalance` bounds **clique count per part**, which is only a weak proxy
+for the quantity the doubly-bordered output cares about: **vertices per
+diagonal block**. A part's vertex set is derived after partitioning (a
+vertex is interior to part *p* iff *all* its cliques landed in *p*, else
+it goes to the separator), so block sizes are a non-linear function of
+the partition. On clique-heterogeneous covers the divergence is large
+(measured on the spec fixture: 2.35x vertex imbalance at eps = 0.03).
+
+### The four schemes
+
+Let `C_i` be clique *i* of the final cover, `d(v)` the number of cliques
+containing vertex *v*, `n_nonisolated` the number of vertices with
+`d(v) >= 1` (= `n_hyperedges` of the CNH).
+
+| Mode | Weight formula | `W = sum w_i` | Part weight ≈ |
+|------|----------------|----------------|----------------|
+| `unit` | `w_i = 1` | `n_cliques` | clique count (v3 behavior) |
+| `clique_size` (default) | `w_i = \|C_i\|` | `total_pins` | vertex incidences (overlap over-counts) |
+| `vertex_share` | `w_i = sum_{v in C_i} s(v,i)` — each vertex splits SCALE integer units over its d(v) cliques (largest remainder, ties to lowest clique ids) | `SCALE * n_nonisolated` (exact) | interior vertices + fractional separator share |
+| `edge_fill_mass` | `w_i` = #edges first-covered by `C_i` (Phase 2), 1 per Phase-3 2-clique | `n_edges` (exact) | exclusive edge mass (off-diagonal nnz proxy) |
+
+Per-scheme notes:
+
+- **`unit`** is the ablation baseline and reproduces v3 results.
+- **`clique_size`** is the v4 default; fixes the demonstrated vertex-
+  imbalance defect. `EdgeCover` covers are provably unaffected by the
+  flip (constant order 2 → identical feasible set as `unit` up to a
+  factor 2).
+- **`vertex_share`**: SCALE = `max(1, min(2^20, 2^30 / n_nonisolated))`,
+  so `W <= ~2^30` (int32-safe; MT-KaHyPar's weight type is `int`).
+  Per-vertex contribution is *exactly* SCALE — zero rounding drift.
+  Degradations (documented): SCALE = 1 (only when `n_nonisolated > 2^30`)
+  degenerates to "each vertex gives its single unit to its lowest-id
+  clique" — not equivalent to `clique_size`; when `d(v) > SCALE` only
+  SCALE of v's cliques receive a unit. The invariants below still hold.
+- **`edge_fill_mass`**: attributes each edge to exactly one clique (the
+  Phase-2 `uncovered_count` already computed during greedy selection;
+  Phase-3 remainder 2-cliques get mass 1). The mass array is recorded by
+  all three ECC solvers; a missing/mis-sized array is a solver bug and
+  throws, not a user error.
+
+### Interior-vertex bound (hard invariant for weighted modes)
+
+An interior vertex of part *p* has *all* its cliques in *p*, hence it
+contributes >= 1 to part *p*'s weight under every weighted scheme:
+
+- `unit`: 1 (per containing clique — the bound applies to clique counts
+  instead, which is the defect);
+- `clique_size`: `d(v) >= 1` pins;
+- `vertex_share`: exactly SCALE >= 1;
+- `edge_fill_mass`: every incident edge's owning clique is in `p`, so
+  >= deg(v) >= 1.
+
+With part weights <= `(1 + eps_eff) * W / k` it follows that
+
+```
+max_i part_size_i  <=  (1 + effective_imbalance) * W / k
+```
+
+for every weighted mode — a guaranteed bound, not a heuristic (pinned by
+`test_interior_bound_weighted_modes`).
+
+### Epsilon auto-relax
+
+A single hypernode heavier than `(1 + eps) * W / k` makes the instance
+infeasible. Rather than failing, the partitioner relaxes eps to the
+minimum feasible value `k * w_max / W - 1` with an unconditional stderr
+warning and re-issues the partitioning parameters (a single code path —
+epsilon is always re-set from `partition()`). The value actually used is
+reported as `effective_imbalance` (>= the requested imbalance). Caveat:
+the `LARGE_K` preset may apply different block-weight semantics
+internally; the relaxation remains a necessary-condition guard there.
+
+### Determinism
+
+`vertex_share` remainders go to the lowest clique ids; weighting
+introduces no new nondeterminism. `edge_fill_mass` attribution follows
+Phase-2 selection order — determinism guarantees are exactly those of
+the ECC stage (same process, same thread count).
+
+### Mode interactions
+
+| Combination | Behavior |
+|---|---|
+| `EdgeCover` + `clique_size` | ≡ `unit` up to constant factor 2 — identical feasible set, identical partition expected under a deterministic preset |
+| `EdgeCover` + `edge_fill_mass` | ≡ `unit` exactly (every mass is 1) |
+| `EdgeCover` + `vertex_share` | each vertex's 2-cliques receive SCALE/2 each (+1 to the lower-id one for odd SCALE) |
+| Triangle-free graph + any mode | BK/TriEnum covers degenerate to all-2-cliques → `clique_size ≡ unit×2` (why the v3→v4 default flip is invisible on triangle-free fixtures) |
+| `vertex_share` at SCALE = 1 | lowest-id-clique attribution — **not** equivalent to `clique_size` |
 
 ## Partitioning and the km1 objective
 
