@@ -1,8 +1,9 @@
 // ecc_bk.cpp - Bron-Kerbosch ECC solver (maximal-clique candidates)
 //
-// find_maximal_cliques and bron_kerbosch_pivot are moved verbatim from
-// clique_cover.cpp (spec §2 / §4.7) — relocated, not rewritten. The
-// fix_core_algs branch fixes the algorithm bodies; do not edit them here.
+// Phase 1 enumerates all maximal cliques (size >= 2) via a degeneracy-
+// ordered parallel Bron-Kerbosch with pivoting (Eppstein-Löffler-Strash
+// outer loop, Tomita pivot rule); Phase 2/3 are the shared greedy
+// selection and 2-clique remainder in ecc_common.cpp.
 #include "hypergraph_reorder/ecc.hpp"
 
 #include <algorithm>

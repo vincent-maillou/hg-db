@@ -1,7 +1,7 @@
 # Edge-Clique Cover (ECC) Methods
 
 This document describes the edge-clique cover methods implemented in HG-DB
-v2, which are the core algorithmic contribution of the library.
+v4.1.0, which are the core algorithmic contribution of the library.
 
 ## Overview
 
@@ -48,10 +48,12 @@ A scalable baseline; candidates are limited to triangles (order-3 cliques).
 1. Compute a **degeneracy ordering** using the Matula-Beck algorithm
    (bucket-sorted degrees, O(n + m)).
 2. For each vertex *v* in the ordering, spawn an independent
-   **Bron-Kerbosch with pivoting** (Tomita et al. optimization):
+   **Bron-Kerbosch with pivoting** (Tomita et al. optimization) over the
+   later neighborhood (Eppstein–Löffler–Strash outer loop):
    - R = {v} (current clique)
    - P = neighbors of *v* that appear after *v* in the ordering (candidates)
-   - X = ∅ (already processed)
+   - X = neighbors of *v* that appear before *v* in the ordering
+     (already processed)
 3. **Pivot selection**: choose the vertex in P ∪ X with the maximum number
    of neighbors in P.
 4. Only explore vertices in P \ N(pivot) — the Tomita optimization.
@@ -62,31 +64,65 @@ A scalable baseline; candidates are limited to triangles (order-3 cliques).
 Best CNH quality; **exponential worst case** — accepted explicitly (no
 guard).
 
-## Shared Phase 2: Greedy Covering Selection
+## Shared Phase 2: Classical Greedy Set-Cover Selection
 
-Used by `TriEnum` and `BK` (not `EdgeCover`):
+Used by `TriEnum` and `BK` (not `EdgeCover`). Implements the **classical
+greedy set-cover algorithm** (Chvátal 1979; Johnson 1974): the universe is
+the set of all *m* graph edges, the sets are the candidates' edge families
+(every pair of clique members is a graph edge by construction of both
+Phase-1 producers, so no membership checks are needed), and at every step
+the candidate with the **maximum number of currently-uncovered edges** is
+accepted. This per-step re-ranking is what earns the
+H(s') ≤ ln s' + 1 approximation guarantee with respect to the best cover
+over the same candidate family. (It replaced the v4.0.0 static
+largest-first accept-if-positive pass, which forfeited the redundancy
+elimination — it accepted 86–91% of all enumerated maximal cliques.)
 
-1. Sort all candidate cliques (triangles or maximal cliques) by **size
-   descending**.
-2. For each clique, count how many **uncovered edges** it contains.
-3. If `uncovered_count > 0`, add the clique to the cover and mark its edges
-   as covered.
-4. Edge coverage is tracked using `std::set<std::pair<index_t, index_t>>`.
-   This is correct but O(log E) per insertion — a potential bottleneck for
-   very large graphs.
+1. **Canonicalize** the Phase-1 candidates: member lists ascending; the
+   candidate list sorted by (size descending, canonical content key —
+   the ascending member list compared lexicographically — ascending).
+   The position in this order ("rank") is the deterministic tie-break
+   key, so the selection is a pure function of the candidate *set*,
+   independent of the OpenMP schedule of Phase 1.
+2. **Tie-break** (equal current marginal): larger clique first (serves
+   the blocked-computation interest in large cliques), then the
+   canonical content key ascending. Any consistent tie-break preserves
+   the approximation guarantee.
+3. **Loop**: while uncovered edges remain and an active candidate
+   exists, accept the max-marginal candidate; record its edge mass (the
+   number of edges it first-covered — the `edge_fill_mass` hypernode
+   weight); mark its edges covered; decrement the current marginals of
+   every other still-active candidate containing one of those edges
+   (zero-marginal candidates are dropped — a set's uncovered-edge count
+   never grows). Early exit when coverage completes; a trailing
+   zero-marginal pass cannot exist.
 
-The populated covered-edge set is passed forward to Phase 3.
+Data structures (v4.1.0): dense undirected edge ids numbered 0..m-1
+ascending by (u, v); per-candidate edge-id lists (one pass over pairs);
+a CSR-style edge→candidates incidence list; a coverage bitmap over
+edges; and an ordered active set keyed by (marginal desc, size desc,
+canonical rank asc) with erase+reinsert on each decrement. Selection
+cost is O(E_Σ log K), where E_Σ = Σ_C (|C| choose 2) candidate-edge
+incidences and K = candidates — no `has_edge` binary searches, no
+per-edge `std::set` node allocations.
+
+The final coverage is exported from the bitmap in ascending (u, v)
+order into the covered-edge set passed forward to Phase 3.
 
 ## Shared Phase 3: Cover Remaining Edges
 
-1. Iterate all graph edges.
-2. Remove edges already covered by selected cliques (the Phase-2 covered
-   set; coverage is no longer rebuilt from scratch).
-3. Add a **2-clique** {u, v} for every remaining uncovered edge.
+1. Walk all graph edges in ascending (u, v) order — the same order in
+   which Phase 2 assigned edge ids — skipping the covered ones via a
+   linear merge against the (sorted) Phase-2 covered-edge set. Coverage
+   is consumed as-is; it is never re-derived from the selected cliques.
+2. Add a **2-clique** {u, v} (mass 1) for every remaining uncovered
+   edge.
 
 This guarantees that every edge is covered by at least one clique. For
-`EdgeCover` this phase runs alone (with an empty covered set — every edge
-is uncovered by construction).
+`BK` the phase is provably a no-op (every graph edge is contained in
+some maximal clique); it is the safety net for `TriEnum` (triangle-free
+edges); and for `EdgeCover` it runs alone with an empty covered set —
+every edge is uncovered by construction.
 
 ## Old → new mapping
 
@@ -105,7 +141,7 @@ enumeration entirely and produced the trivial all-2-clique cover.
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `method` | `kBk` | ECC method: `kEdgeCover` / `kTriEnum` / `kBk` |
-| `use_parallel` | `true` | OpenMP parallelism for enumeration + selection |
+| `use_parallel` | `true` | OpenMP for Phase-1 **enumeration only** (the greedy selection is inherently sequential) |
 | `num_threads` | `0` | Thread count (0 = auto-detect) |
 | `suppress_output` | `true` | Suppress ECC progress output |
 
@@ -214,10 +250,17 @@ internally; the relaxation remains a necessary-condition guard there.
 
 ### Determinism
 
-`vertex_share` remainders go to the lowest clique ids; weighting
-introduces no new nondeterminism. `edge_fill_mass` attribution follows
-Phase-2 selection order — determinism guarantees are exactly those of
-the ECC stage (same process, same thread count).
+Since v4.1.0 the ECC stage is deterministic: the Phase-2 selection is a
+pure function of the canonicalized candidate set, so the cover, the
+edge masses, and the CNH are identical across thread counts and OpenMP
+schedules (`EccOptions::use_parallel` gates only Phase-1 enumeration,
+whose arrival order is canonicalized away). `vertex_share` remainders go
+to the lowest clique ids — the greedy acceptance order, a *defined*
+order rather than an incidental one; `edge_fill_mass` attribution
+likewise follows the greedy acceptance order and is fully deterministic
+(no process/thread-count caveats). End-to-end result determinism
+additionally requires MT-KaHyPar's `deterministic` preset; a fixed seed
+alone does not pin the partition search.
 
 ### Mode interactions
 
@@ -278,7 +321,10 @@ Both provide zero-copy `std::span` access.
 - **TriEnum** is O(m^(3/2)) in the worst case but practical for sparse
   graphs.
 - **EdgeCover** is O(m) — pure bookkeeping.
-- **Greedy covering** with `std::set` edge tracking is O(k log E) where k
-  is the number of candidate cliques. For very large graphs with many
-  candidates, this can dominate runtime.
+- **Greedy selection** (v4.1.0) is O(E_Σ log K) with small constants
+  (E_Σ = total candidate-edge incidences, K = candidates): bitmap
+  coverage, dense edge ids, incidence-list marginal decrements, ordered
+  active set. It replaced v4.0.0's scan carrying two binary searches
+  per pair plus a `std::set` insert/find per edge.
+- **Phase 3 remainder** is a linear O(n + m) bitmap/merge walk.
 - **CNH construction** is O(total_pins) with a sort+unique per vertex.

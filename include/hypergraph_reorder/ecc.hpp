@@ -17,7 +17,8 @@ namespace hypergraph_reorder {
 // truth mirrored 1:1 by the C API's hgr_default_options.
 struct EccOptions {
   EccMethod method = EccMethod::kBk;  // default ECC method (spec D3)
-  bool use_parallel = true;           // OpenMP for enumeration + selection
+  bool use_parallel = true;           // OpenMP for Phase-1 enumeration only
+                                     // (the greedy selection is sequential)
   int num_threads = 0;                // 0 = auto-detect
   bool suppress_output = true;
 };
@@ -79,20 +80,34 @@ std::unique_ptr<EccSolver> make_ecc_solver(const EccOptions& opts);
 // BronKerboschEccSolver (definitions in ecc_common.cpp).
 namespace detail {
 
-// Phase 2: Greedy clique selection to cover edges (largest first).
+// Phase 2: classical greedy set-cover selection (Chvátal 1979; Johnson
+// 1974). At every step accepts the candidate clique with the maximum
+// number of currently-uncovered edges; ties break by larger clique
+// first, then by canonical content key (ascending member list,
+// lexicographic) ascending. Candidates are canonicalized up front
+// (members ascending, list sorted by size desc / key asc), so the result
+// is a pure function of the candidate set — independent of the Phase-1
+// OpenMP schedule (deterministic). Complexity: O(E_Sigma log K) where
+// E_Sigma = total candidate-edge incidences, K = candidates; coverage is
+// tracked with a bitmap plus an ordered active set of current marginals.
 // Returns the selected cliques and, via *covered, the set of edges they
 // cover (consumed by Phase 3). Via *selected_mass, records each accepted
-// clique's uncovered_count (the number of edges it first-covered — the
-// edge_fill_mass hypernode weight); index-aligned with the returned
-// selected cliques.
+// clique's marginal at acceptance (the number of edges it first-covered
+// — the edge_fill_mass hypernode weight); index-aligned with the
+// returned selected cliques.
 std::vector<std::vector<index_t>> select_covering_cliques(
     const Graph& graph,
     const std::vector<std::vector<index_t>>& maximal_cliques,
     std::set<std::pair<index_t, index_t>>& covered,
     std::vector<index_t>& selected_mass);
 
-// Phase 3: Cover remaining (uncovered) edges with 2-cliques. Appends 1
-// per added 2-clique to *masses, keeping it index-aligned with cliques.
+// Phase 3: Cover remaining (uncovered) edges with 2-cliques. Walks all
+// graph edges in ascending (u, v) order (= ascending edge-id order) and
+// skips those present in *covered_edges (the Phase-2 coverage, consumed
+// as-is — never re-derived). Appends 1 per added 2-clique to *masses,
+// keeping it index-aligned with cliques. For BK input this is provably a
+// no-op; it is the safety net for TriEnum (triangle-free edges) and the
+// whole pipeline for EdgeCover (empty covered set).
 void cover_remaining_edges(
     const Graph& graph,
     const std::set<std::pair<index_t, index_t>>& covered_edges,

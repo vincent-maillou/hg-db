@@ -1,8 +1,8 @@
 // ecc_tri.cpp - Triangle-enumeration ECC solver (triangle candidates)
 //
-// enumerate_triangles is moved verbatim from clique_cover.cpp (spec §2 /
-// §4.7) — relocated, not rewritten. The fix_core_algs branch fixes the
-// algorithm body; do not edit it here.
+// Phase 1 enumerates all triangles via parallel two-pointer adjacency
+// intersection; Phase 2/3 are the shared greedy selection and 2-clique
+// remainder in ecc_common.cpp.
 #include "hypergraph_reorder/ecc.hpp"
 
 #include <algorithm>
