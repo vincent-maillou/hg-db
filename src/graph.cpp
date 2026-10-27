@@ -184,7 +184,7 @@ index_t Graph::compute_degeneracy_ordering(std::vector<index_t> &ordering) const
   bucket below the last removal — total scan work O(n + max_deg), overall
   O(n + m) time and O(n + max_deg) memory.
 
-  The within-bucket extraction order is arbitrary (FIFO here). This is safe:
+  The within-bucket extraction order is arbitrary (LIFO here). This is safe:
   the degeneracy value d is tie-break invariant, the *set* of maximal cliques
   found downstream (ELS/Bron-Kerbosch) is invariant to the ordering, and the
   v4.1.0 Phase-2 canonicalization makes the final cover a pure function of
@@ -221,7 +221,9 @@ index_t Graph::compute_degeneracy_ordering(std::vector<index_t> &ordering) const
   std::vector<index_t> next(n, -1);
   std::vector<index_t> head(static_cast<size_t>(max_degree) + 1, -1);
 
-  // Append v to the tail of bucket d (FIFO extraction order).
+  // Push v at the head of bucket d's list; extraction pops the head, so
+  // the within-bucket discipline is LIFO. The order is free per spec v5
+  // D4 — head push/pop is merely the cheapest to maintain.
   auto list_append = [&](index_t d, index_t v) {
     pos[v] = d;
     prev[v] = -1;
@@ -271,7 +273,7 @@ index_t Graph::compute_degeneracy_ordering(std::vector<index_t> &ordering) const
     }
     if (min_bucket > max_degree) break;  // every vertex removed
 
-    // Pop a vertex of minimum current degree (FIFO: the bucket head).
+    // Pop a vertex of minimum current degree (the bucket head — LIFO).
     const index_t v = head[min_bucket];
     list_remove(v);
     removed[v] = true;

@@ -272,6 +272,11 @@ extern "C" int hgr_reorder_csr(hgr_reorderer_t* reorderer, int64_t n_rows,
                                int64_t nnz, const int64_t* row_ptr,
                                const int64_t* col_idx, const double* values,
                                hgr_result_t** result) {
+  // Total timer (v5 D7): starts at function entry — before the D9 content
+  // validation — so time_total_ms is the wall clock of the whole
+  // hgr_reorder_csr call, validation included, as documented in the header.
+  const Timer total_timer;
+
   if (!reorderer || !row_ptr || !col_idx || !result) return -1;
 
   // Content validation (v5 D9): before any copy or construction, so a
@@ -289,7 +294,6 @@ extern "C" int hgr_reorder_csr(hgr_reorderer_t* reorderer, int64_t n_rows,
   // Ingestion timer (v5 D7): covers the CSR array copies + CSRMatrix
   // construction here, on top of the graph build timed inside reorder().
   Timer ingest_timer;
-  const Timer total_timer;
 
   try {
     // Create CSR matrix

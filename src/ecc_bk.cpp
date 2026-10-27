@@ -312,7 +312,8 @@ CliqueCover BronKerboschEccSolver::solve(const Graph& graph) {
               << std::endl;
 
   // Capture the enumeration histogram (v5, D2) BEFORE the greedy selection
-  // consumes the candidate vector: one O(total members) pass, no retention.
+  // consumes the candidate vector: one O(K) size-counting pass over the K
+  // candidates (reads c.size() only — no member traversal, no retention).
   for (const auto& c : all_cliques) {
     ++stats_.maximal_clique_enumeration_histogram[static_cast<index_t>(c.size())];
   }
