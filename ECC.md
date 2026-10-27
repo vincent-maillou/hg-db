@@ -46,7 +46,14 @@ A scalable baseline; candidates are limited to triangles (order-3 cliques).
 ### `BK` (`HGR_ECC_BK`) — the default
 
 1. Compute a **degeneracy ordering** using the Matula-Beck algorithm
-   (bucket-sorted degrees, O(n + m)).
+   (degree buckets over an intrusive doubly-linked vertex list, true
+   **O(n + m)** time / O(n + max_deg) memory since v5). The degeneracy
+   *d* (max over removal steps of the min-degree at removal) is a
+   by-product and is **reported** in the statistics (`degeneracy`;
+   -1 for the other methods, 0 is a real value for an edge-less graph).
+   Within-bucket extraction order is arbitrary: *d*, the maximal-clique
+   set, and (via the Phase-2 canonicalization) the final cover are
+   tie-break invariant.
 2. For each vertex *v* in the ordering, spawn an independent
    **Bron-Kerbosch with pivoting** (Tomita et al. optimization) over the
    later neighborhood (Eppstein–Löffler–Strash outer loop):
@@ -291,15 +298,68 @@ Configuration levers:
 - `seed` — run-to-run variance of km1 at fixed configuration (default 42
   for reproducibility; −1 for random).
 
-## Clique-order histogram
+## Clique-order histograms
 
-`Statistics::clique_order_counts` (C++ `std::map<index_t, index_t>`,
-exposed via the C `hgr_get_clique_order_counts` accessor) maps clique
-**order** (size: 2 for an edge, 3 for a triangle, …) to the number of
-cliques of that order in the **final selected cover** (after greedy
-selection and the 2-clique remainder — not the raw candidate
+Two related histograms are reported (v5); both are C++ `std::map<index_t,
+index_t>` exposed through dedicated C accessors and, in Parallax, as
+metadata dicts.
+
+### Cover histogram — `clique_order_counts` / `hgr_get_clique_order_counts`
+
+Maps clique **order** (size: 2 for an edge, 3 for a triangle, …) to the
+number of cliques of that order in the **final selected cover** (after
+greedy selection and the 2-clique remainder — not the raw candidate
 enumeration). Populated for all three methods; `EdgeCover` yields the
-degenerate histogram `{2: n_edges}`.
+degenerate histogram `{2: n_edges}`. Companion scalar: `n_cliques`
+(= sum of the histogram).
+
+### Enumeration histogram — `maximal_clique_enumeration_histogram` /
+`hgr_get_maximal_clique_enumeration_histogram` (v5, BK only)
+
+Maps order → count over **all maximal cliques enumerated by Phase 1** —
+the candidate set *before* greedy selection. Companion scalar:
+`n_maximal_cliques` (= sum of the histogram), the headline
+"enumerated vs selected" number against `n_cliques`. Empty (`*n == 0` /
+`{}` / `0`) for `TriEnum`/`EdgeCover`: the enumeration-vs-selection
+comparison is only meaningful for BK (owner decision, no TriEnum
+candidate reporting). The histogram is computed in one pass over the
+candidates; no clique list is retained.
+
+### Comparing the two
+
+- For every order `k >= 3`, `cover_counts[k] <= enum_counts[k]` (the
+  selection is a subset of the candidates; Phase 3 only ever adds
+  2-cliques).
+- `max(enum orders) == max_clique_size`: the greedy's first pick is a
+  maximum-order candidate ((s choose 2) is strictly increasing).
+- `n_cliques <= n_maximal_cliques`: the cover cannot exceed the
+  candidate set plus per-edge remainders... on BK the remainder is
+  provably empty, so the cover count is at most the enumeration count.
+
+## Timing model (v5)
+
+Eight sequential non-overlapping wall-clock stages (ms, `steady_clock`)
+plus the total:
+
+| # | Field | Contents |
+|---|-------|----------|
+| 1 | `time_ingestion_ms` | C-side CSR copy + `CSRMatrix` + graph build |
+| 2 | `time_degeneracy_ms` | Matula-Beck ordering + rank[] (BK only; 0.0 otherwise) |
+| 3 | `time_enumeration_ms` | Phase 1 (BK / triangle enumeration + merge; 0.0 for EdgeCover) |
+| 4 | `time_greedy_ms` | Phase 2 selection + Phase 3 remainder (EdgeCover: Phase 3 alone) |
+| 5 | `time_cnh_ms` | CNH construction incl. node weighting |
+| 6 | `time_partition_ms` | MT-KaHyPar partitioning |
+| 7 | `time_separator_ms` | CNH-partition → vertex separator mapping |
+| 8 | `time_permutation_ms` | DB permutation assembly |
+| T | `time_total_ms` | whole `hgr_reorder_csr` call (ingestion included) |
+
+Invariant: `time_total_ms >= sum(stages 1..8)`. The caller-side scipy
+canonicalization in the Parallax wrapper happens before the C call and is
+deliberately outside every stage (the wrapper's `runtime` covers the
+end-to-end number). MT-KaHyPar's thread-pool initialization is
+constructor-time and outside all timers — warm up before benchmarking.
+The two v4 timing keys were dropped outright (no compatibility keys;
+historical names appear in the agents.md changelog only).
 
 ## Data Structures
 

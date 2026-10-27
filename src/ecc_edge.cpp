@@ -19,7 +19,10 @@ EdgeCoverEccSolver::EdgeCoverEccSolver(const EccOptions& opts)
     : opts_(opts) {}
 
 CliqueCover EdgeCoverEccSolver::solve(const Graph& graph) {
-  Timer timer;
+  // Stage 4 of 8 (v5): the whole ECC work is the Phase-3 remainder walk
+  // (no enumeration, no greedy selection). time_degeneracy_ms and
+  // time_enumeration_ms stay 0.0; degeneracy stays -1 (spec v5 D1/D2).
+  Timer greedy_timer;
 
   // All edges are uncovered by construction — pass an empty covered set
   // (the pre-fix behavior, deliberately: every edge becomes a 2-clique
@@ -29,12 +32,10 @@ CliqueCover EdgeCoverEccSolver::solve(const Graph& graph) {
   std::vector<std::vector<index_t>> all_cliques;
   std::vector<index_t> masses;
   detail::cover_remaining_edges(graph, covered, all_cliques, masses);
+  stats_.time_greedy_ms = greedy_timer.elapsed_ms();
 
   if (!opts_.suppress_output)
     std::cout << "Total cliques: " << all_cliques.size() << std::endl;
-
-  stats_.time_ecc_ms = timer.elapsed_ms();
-  stats_.n_cliques = all_cliques.size();
 
   CliqueCover cover(graph.n_vertices(), std::move(all_cliques));
   cover.set_edge_mass(std::move(masses));

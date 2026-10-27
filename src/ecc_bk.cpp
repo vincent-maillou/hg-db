@@ -199,25 +199,14 @@ void bron_kerbosch_pivot(const Graph &graph,
   }
 }
 
-// Phase 1b: Find maximal cliques using parallel Bron-Kerbosch
+// Phase 1b: Find maximal cliques using parallel Bron-Kerbosch over the
+// given degeneracy ordering. `ordering` and the inverse permutation `rank`
+// are computed by the caller (timed as the degeneracy stage there):
+//   ordering[i] = vertex at position i of the degeneracy ordering,
+//   rank[v]     = position of vertex v in that ordering.
 std::vector<std::vector<index_t>> find_maximal_cliques(
-    const Graph &graph, int num_threads, bool use_parallel) {
-  // Compute degeneracy ordering.
-  //
-  // ordering[i] = vertex at position i in the degeneracy ordering.
-  auto ordering = graph.compute_degeneracy_ordering();
-
-  // Build inverse permutation:
-  //
-  // rank[v] = position of vertex v in the degeneracy ordering.
-  //
-  // Vertex IDs are not assumed to correspond to the degeneracy ordering.
-  std::vector<index_t> rank(graph.n_vertices());
-
-  for (index_t i = 0; i < static_cast<index_t>(ordering.size()); ++i) {
-    rank[ordering[i]] = i;
-  }
-
+    const Graph &graph, const std::vector<index_t> &ordering,
+    const std::vector<index_t> &rank, int num_threads, bool use_parallel) {
   // Thread-local clique storage
   std::vector<std::vector<std::vector<index_t>>> thread_cliques;
 
@@ -295,19 +284,44 @@ BronKerboschEccSolver::BronKerboschEccSolver(const EccOptions& opts)
     : opts_(opts) {}
 
 CliqueCover BronKerboschEccSolver::solve(const Graph& graph) {
-  Timer timer;
+  // Stage 2 of 8 (v5): degeneracy ordering + rank[] construction.
+  Timer degeneracy_timer;
 
+  std::vector<index_t> ordering;
+  const index_t d = graph.compute_degeneracy_ordering(ordering);
+
+  // rank[v] = position of vertex v in the degeneracy ordering. Vertex IDs
+  // are not assumed to correspond to the degeneracy ordering.
+  std::vector<index_t> rank(graph.n_vertices());
+  for (index_t i = 0; i < static_cast<index_t>(ordering.size()); ++i) {
+    rank[ordering[i]] = i;
+  }
+
+  stats_.degeneracy = d;
+  stats_.time_degeneracy_ms = degeneracy_timer.elapsed_ms();
+
+  // Stage 3 of 8 (v5): parallel Bron-Kerbosch enumeration + thread merge.
   if (!opts_.suppress_output)
     std::cout << "Finding maximal cliques..." << std::endl;
-  std::vector<std::vector<index_t>> all_cliques =
-      find_maximal_cliques(graph, opts_.num_threads, opts_.use_parallel);
+  Timer enumeration_timer;
+  std::vector<std::vector<index_t>> all_cliques = find_maximal_cliques(
+      graph, ordering, rank, opts_.num_threads, opts_.use_parallel);
+  stats_.time_enumeration_ms = enumeration_timer.elapsed_ms();
   if (!opts_.suppress_output)
     std::cout << "Found " << all_cliques.size() << " maximal cliques"
               << std::endl;
 
-  // Phase 2: Greedily select cliques to cover edges
+  // Capture the enumeration histogram (v5, D2) BEFORE the greedy selection
+  // consumes the candidate vector: one O(total members) pass, no retention.
+  for (const auto& c : all_cliques) {
+    ++stats_.maximal_clique_enumeration_histogram[static_cast<index_t>(c.size())];
+  }
+  stats_.n_maximal_cliques = static_cast<index_t>(all_cliques.size());
+
+  // Stage 4 of 8 (v5): greedy Phase 2 (selection) + Phase 3 (remainder).
   if (!opts_.suppress_output)
     std::cout << "Selecting covering cliques..." << std::endl;
+  Timer greedy_timer;
   std::set<std::pair<index_t, index_t>> covered;
   std::vector<index_t> masses;
   all_cliques =
@@ -315,12 +329,10 @@ CliqueCover BronKerboschEccSolver::solve(const Graph& graph) {
 
   // Phase 3: Cover remaining edges with 2-cliques
   detail::cover_remaining_edges(graph, covered, all_cliques, masses);
+  stats_.time_greedy_ms = greedy_timer.elapsed_ms();
 
   if (!opts_.suppress_output)
     std::cout << "Total cliques: " << all_cliques.size() << std::endl;
-
-  stats_.time_ecc_ms = timer.elapsed_ms();
-  stats_.n_cliques = all_cliques.size();
 
   CliqueCover cover(graph.n_vertices(), std::move(all_cliques));
   cover.set_edge_mass(std::move(masses));

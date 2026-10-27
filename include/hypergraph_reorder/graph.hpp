@@ -30,7 +30,11 @@ class Graph {
   static Graph from_symmetric_matrix(const CSRMatrix &matrix);
 
   bool validate() const;
-  std::vector<index_t> compute_degeneracy_ordering() const;
+  // Matula-Beck smallest-last ordering (linear time, spec v5 D4): fills
+  // `ordering` with ordering[i] = vertex removed at step i and returns the
+  // degeneracy d = max over removal steps of the min-degree at removal.
+  // d = 0 for an edge-less graph.
+  index_t compute_degeneracy_ordering(std::vector<index_t>& ordering) const;
   Graph induced_subgraph(const std::vector<index_t> &vertices) const;
 
  private:

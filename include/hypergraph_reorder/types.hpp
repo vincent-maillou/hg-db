@@ -109,17 +109,31 @@ struct Statistics {
   // Graph statistics
   index_t n_vertices = 0;
   index_t n_edges = 0;
+  // Degeneracy d of the simple graph (v5): max over removal steps of the
+  // min-degree at removal in the Matula-Beck smallest-last ordering.
+  // BK only; -1 when not computed (non-BK methods). 0 is a real value
+  // (edge-less / empty graph), never a sentinel.
+  index_t degeneracy = -1;
 
   // Edge-clique cover statistics
   EccMethod ecc_method_used = EccMethod::kBk;
   index_t n_cliques = 0;
   index_t max_clique_size = 0;
   double avg_clique_size = 0.0;
+  // v5, BK only: number of maximal cliques enumerated by Phase 1 (the
+  // candidate set before greedy selection); equals the sum of
+  // maximal_clique_enumeration_histogram. 0 for non-BK methods.
+  index_t n_maximal_cliques = 0;
   // Clique-order histogram of the *final* cover (after greedy selection and
   // the 2-clique remainder): clique order (size) -> number of cliques of
   // that order. Not part of the plain-C statistics struct; exposed through
   // a dedicated C accessor.
   std::map<index_t, index_t> clique_order_counts;
+  // v5, BK only: clique-order histogram over ALL maximal cliques enumerated
+  // by Phase 1 (order -> count). Compact summary computed in one pass; no
+  // clique retention. Empty for non-BK methods; exposed through a dedicated
+  // C accessor.
+  std::map<index_t, index_t> maximal_clique_enumeration_histogram;
 
   // Clique-node hypergraph statistics
   index_t n_hypernodes = 0;
@@ -154,10 +168,24 @@ struct Statistics {
   double effective_imbalance = 0.0;      // eps after auto-relax
   double achieved_block_imbalance = 0.0; // max part / (n_interior / k)
 
-  // Timing breakdown (milliseconds) — seven stages including the total,
-  // which is the wall clock around the whole reorder() call.
-  double time_graph_ms = 0.0;
-  double time_ecc_ms = 0.0;
+  // Timing breakdown (milliseconds, v5): eight sequential non-overlapping
+  // stages plus the total.
+  //   1 ingestion   — C-side CSR copy + CSRMatrix + graph build (reorderer;
+  //                   the C API adds its array-copy time on top)
+  //   2 degeneracy  — Matula-Beck ordering + rank[] (BK only; 0.0 otherwise)
+  //   3 enumeration — Phase 1: parallel BK / triangle enumeration + merge
+  //                   (0.0 for EdgeCover)
+  //   4 greedy      — Phase 2 selection + Phase 3 remainder (EdgeCover:
+  //                   Phase 3 alone)
+  //   5..8          — CNH, partition, separator, permutation (unchanged)
+  //   total         — whole hgr_reorder_csr call (ingestion included; the
+  //                   C API overwrites the pipeline-only value, D7).
+  // The two v4 timing keys were dropped outright (no compatibility keys,
+  // Q2); see the changelog for the historical names.
+  double time_ingestion_ms = 0.0;
+  double time_degeneracy_ms = 0.0;
+  double time_enumeration_ms = 0.0;
+  double time_greedy_ms = 0.0;
   double time_cnh_ms = 0.0;
   double time_partition_ms = 0.0;
   double time_separator_ms = 0.0;

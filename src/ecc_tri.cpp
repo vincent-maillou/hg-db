@@ -93,19 +93,23 @@ TriangleEnumEccSolver::TriangleEnumEccSolver(const EccOptions& opts)
     : opts_(opts) {}
 
 CliqueCover TriangleEnumEccSolver::solve(const Graph& graph) {
-  Timer timer;
-
+  // Stage 3 of 8 (v5): triangle enumeration + thread merge. (No degeneracy
+  // stage for TriEnum: degeneracy stays -1, time_degeneracy_ms stays 0.0,
+  // and no enumeration histogram is recorded — owner decision, spec v5 D2.)
   if (!opts_.suppress_output)
     std::cout << "Enumerating triangles..." << std::endl;
+  Timer enumeration_timer;
   auto all_triangles =
       enumerate_triangles(graph, opts_.num_threads, opts_.use_parallel);
+  stats_.time_enumeration_ms = enumeration_timer.elapsed_ms();
   if (!opts_.suppress_output)
     std::cout << "Found " << all_triangles.size() << " triangles"
               << std::endl;
 
-  // Greedily select triangles to cover edges
+  // Stage 4 of 8 (v5): greedy Phase 2 (selection) + Phase 3 (remainder).
   if (!opts_.suppress_output)
     std::cout << "Selecting covering triangles..." << std::endl;
+  Timer greedy_timer;
   std::set<std::pair<index_t, index_t>> covered;
   std::vector<index_t> masses;
   std::vector<std::vector<index_t>> all_cliques =
@@ -113,12 +117,10 @@ CliqueCover TriangleEnumEccSolver::solve(const Graph& graph) {
 
   // Phase 3: Cover remaining edges with 2-cliques
   detail::cover_remaining_edges(graph, covered, all_cliques, masses);
+  stats_.time_greedy_ms = greedy_timer.elapsed_ms();
 
   if (!opts_.suppress_output)
     std::cout << "Total cliques: " << all_cliques.size() << std::endl;
-
-  stats_.time_ecc_ms = timer.elapsed_ms();
-  stats_.n_cliques = all_cliques.size();
 
   CliqueCover cover(graph.n_vertices(), std::move(all_cliques));
   cover.set_edge_mass(std::move(masses));

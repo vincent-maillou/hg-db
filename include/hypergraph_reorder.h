@@ -84,17 +84,36 @@ typedef struct {
   hgr_runtime_options_t runtime;
 } hgr_options_t;
 
-/* Statistics structure (v4: node weighting observables added; ABI break
- * vs v3) */
+/* Statistics structure (v5: degeneracy, maximal-clique enumeration
+ * observables, 8-stage timing model; ABI break vs v4).
+ *
+ * MIRROR DISCIPLINE: this field order is authoritative — the ctypes
+ * mirrors in src/parallax/ordering/general/hgdb.py (_HGRStatistics) and
+ * external/HG-DB/checks/bk_regression.py (Statistics) must copy it
+ * verbatim. The struct is caller-allocated: a stale mirror against a
+ * newer .so writes past the caller's buffer (out-of-bounds write). Any
+ * layout change must update all three in the same commit. */
 typedef struct {
   /* Matrix */
   int64_t n_rows, n_cols, nnz;
   /* Graph */
   int64_t n_vertices, n_edges;
+  /* degeneracy (v5): d of the simple graph (max over removal steps of the
+   * min-degree at removal, Matula-Beck smallest-last). BK only; -1 when
+   * not computed (non-BK). 0 is a real value (edge-less graph). Bounds
+   * the local density: omega(G) <= d + 1, arboricity <= d. */
+  int64_t degeneracy;
   /* ECC */
   hgr_ecc_method_t ecc_method_used;
   int64_t n_cliques, max_clique_size;
   double avg_clique_size;
+  /* n_maximal_cliques (v5, BK only): number of maximal cliques enumerated
+   * by Phase 1 (the candidate set before greedy selection); equals the
+   * sum of the enumeration histogram (see
+   * hgr_get_maximal_clique_enumeration_histogram). The headline
+   * "enumerated vs selected" number against n_cliques. 0 for non-BK
+   * methods. */
+  int64_t n_maximal_cliques;
   /* CNH */
   int64_t n_hypernodes, n_hyperedges, total_pins;
   /* Partition */
@@ -129,9 +148,30 @@ typedef struct {
   int64_t total_node_weight;
   double effective_imbalance;
   double achieved_block_imbalance;
-  /* Timings (ms) */
-  double time_graph_ms, time_ecc_ms, time_cnh_ms, time_partition_ms,
-      time_separator_ms, time_permutation_ms, time_total_ms;
+  /* Timings (v5): 8 sequential non-overlapping stages + total, ms.
+   * 1 time_ingestion_ms  — CSR copy + CSRMatrix + graph build (the C API
+   *                         adds its array-copy time on top of the graph
+   *                         build timed inside reorder())
+   * 2 time_degeneracy_ms — Matula-Beck ordering + rank[]; BK only,
+   *                         0.0 otherwise
+   * 3 time_enumeration_ms— Phase 1 (parallel BK / triangle enumeration +
+   *                         thread merge); 0.0 for EdgeCover
+   * 4 time_greedy_ms     — Phase 2 selection + Phase 3 remainder
+   *                         (EdgeCover: Phase 3 alone)
+   * 5..8 CNH, partition, separator, permutation.
+   * time_total_ms        — whole hgr_reorder_csr call (ingestion
+   *                         included). Invariant: total >= sum(8 stages).
+ * The two v4 timing keys were dropped outright (no compatibility keys);
+ * historical names appear in the changelog only. */
+  double time_ingestion_ms;
+  double time_degeneracy_ms;
+  double time_enumeration_ms;
+  double time_greedy_ms;
+  double time_cnh_ms;
+  double time_partition_ms;
+  double time_separator_ms;
+  double time_permutation_ms;
+  double time_total_ms;
 } hgr_statistics_t;
 
 /* Library version: fills version[0..2] = {major, minor, patch} */
@@ -173,6 +213,17 @@ int hgr_get_statistics(hgr_result_t* result, hgr_statistics_t* stats);
 int hgr_get_clique_order_counts(hgr_result_t* result, int64_t* n,
                                 const int64_t** orders,
                                 const int64_t** counts);
+
+/* Maximal-clique-enumeration histogram (v5, BK only): order -> count over
+ * ALL maximal cliques enumerated by Phase 1 (before greedy selection).
+ * Same ownership contract as hgr_get_clique_order_counts: result-owned
+ * arrays, sorted by ascending order, valid until hgr_result_free.
+ * *n == 0 for non-BK methods (consumers must check *n before
+ * dereferencing; the arrays may be null/empty then). */
+int hgr_get_maximal_clique_enumeration_histogram(hgr_result_t* result,
+                                                 int64_t* n,
+                                                 const int64_t** orders,
+                                                 const int64_t** counts);
 
 /* Returns the message of the last error that occurred on the calling
  * thread, or "" when no error occurred. Thread-local; valid until the next

@@ -1,8 +1,6 @@
 #include "hypergraph_reorder/graph.hpp"
 
 #include <algorithm>
-#include <queue>
-#include <set>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -174,8 +172,23 @@ bool Graph::validate() const {
   return true;
 }
 
-std::vector<index_t> Graph::compute_degeneracy_ordering() const {
-  /* Matula-Beck algorithm for degeneracy ordering
+index_t Graph::compute_degeneracy_ordering(std::vector<index_t> &ordering) const {
+  /* Matula-Beck algorithm for degeneracy ordering (smallest-last ordering).
+
+  Linear-time implementation (spec v5 D4): degree-count buckets over an
+  intrusive doubly-linked vertex list (pos[]/prev[]/next[], one head per
+  bucket). Each removal pops a vertex of minimum current degree, decrements
+  the live degrees of the not-yet-removed neighbors, and relinks each one
+  exactly one bucket down. Because the current minimum degree can drop by at
+  most 1 per removal, the min-bucket cursor resumes its forward scan one
+  bucket below the last removal — total scan work O(n + max_deg), overall
+  O(n + m) time and O(n + max_deg) memory.
+
+  The within-bucket extraction order is arbitrary (FIFO here). This is safe:
+  the degeneracy value d is tie-break invariant, the *set* of maximal cliques
+  found downstream (ELS/Bron-Kerbosch) is invariant to the ordering, and the
+  v4.1.0 Phase-2 canonicalization makes the final cover a pure function of
+  that candidate set (spec v5 D4).
 
   References:
   -----------
@@ -187,58 +200,95 @@ std::vector<index_t> Graph::compute_degeneracy_ordering() const {
 
   */
 
-  // Initialize output list L
-  std::vector<index_t> ordering;
-  ordering.reserve(n_vertices_);
+  const index_t n = n_vertices_;
+  ordering.clear();
+  ordering.reserve(static_cast<size_t>(n));
 
-  std::vector<bool> removed(n_vertices_, false);
-  std::vector<index_t> current_degrees(n_vertices_);
-
-  // Initialize live degree array with the current degrees of all vertices
-  for (index_t i = 0; i < n_vertices_; ++i) {
-    current_degrees[i] = degree(i);
-  }
-
+  // Live degrees (current degree within the not-yet-removed subgraph).
+  std::vector<index_t> current_degrees(n);
   index_t max_degree = 0;
-  for (auto d : current_degrees) {
-    max_degree = std::max(max_degree, d);
+  for (index_t v = 0; v < n; ++v) {
+    current_degrees[v] = degree(v);
+    max_degree = std::max(max_degree, current_degrees[v]);
   }
 
-  // Create buckets for vertices based on their degrees
-  std::vector<std::set<index_t>> buckets(max_degree + 1);
-  for (index_t i = 0; i < n_vertices_; ++i) {
-    buckets[current_degrees[i]].insert(i);
-  }
+  // Intrusive doubly-linked lists, one per degree bucket:
+  //   pos[v]        = bucket currently holding v,
+  //   prev[v]/next[v] = neighbors of v within that bucket's list,
+  //   head[d]       = first vertex of bucket d (-1 = empty).
+  std::vector<index_t> pos(n);
+  std::vector<index_t> prev(n, -1);
+  std::vector<index_t> next(n, -1);
+  std::vector<index_t> head(static_cast<size_t>(max_degree) + 1, -1);
 
-  for (index_t iter = 0; iter < n_vertices_; ++iter) {
-    index_t min_deg = 0;
-
-    // Find the smallest non-empty bucket
-    while (min_deg <= max_degree && buckets[min_deg].empty()) {
-      min_deg++;
+  // Append v to the tail of bucket d (FIFO extraction order).
+  auto list_append = [&](index_t d, index_t v) {
+    pos[v] = d;
+    prev[v] = -1;
+    next[v] = head[d];
+    if (head[d] != -1) {
+      prev[head[d]] = v;
     }
+    head[d] = v;
+  };
 
-    // If all buckets are empty, we are done
-    if (min_deg > max_degree) break;
+  // Detach v from its bucket's list.
+  auto list_remove = [&](index_t v) {
+    const index_t p = prev[v];
+    const index_t nx = next[v];
+    if (p != -1) {
+      next[p] = nx;
+    } else {
+      head[pos[v]] = nx;
+    }
+    if (nx != -1) {
+      prev[nx] = p;
+    }
+    prev[v] = -1;
+    next[v] = -1;
+  };
 
-    // Remove a vertex from the smallest non-empty bucket
-    index_t v = *buckets[min_deg].begin();
-    buckets[min_deg].erase(buckets[min_deg].begin());
+  std::vector<bool> removed(n, false);
+  for (index_t v = 0; v < n; ++v) {
+    list_append(current_degrees[v], v);
+  }
+
+  index_t degeneracy = 0;
+  // Cursor into the bucket array. Invariant: the current minimum live
+  // degree never drops by more than 1 per removal (every surviving vertex
+  // had degree >= d before the removal at d; a neighbor of the removed
+  // vertex loses exactly 1). So after each removal it suffices to resume
+  // scanning at d - 1 — the scan only ever moves forward from there, which
+  // keeps the total scan work O(n + max_deg).
+  index_t min_bucket = 0;
+
+  for (index_t iter = 0; iter < n; ++iter) {
+    if (iter > 0 && min_bucket > 0) {
+      --min_bucket;  // the last removal may have opened bucket d - 1
+    }
+    while (min_bucket <= max_degree && head[min_bucket] == -1) {
+      ++min_bucket;
+    }
+    if (min_bucket > max_degree) break;  // every vertex removed
+
+    // Pop a vertex of minimum current degree (FIFO: the bucket head).
+    const index_t v = head[min_bucket];
+    list_remove(v);
     removed[v] = true;
+    degeneracy = std::max(degeneracy, min_bucket);
     ordering.push_back(v);
 
-    // Update the degrees of the neighbors of v
+    // Decrement the live degree of each surviving neighbor, relinking it
+    // exactly one bucket down.
     for (auto u : neighbors(v)) {
-      if (!removed[u]) {
-        index_t old_deg = current_degrees[u];
-        buckets[old_deg].erase(u);
-        current_degrees[u]--;
-        buckets[current_degrees[u]].insert(u);
-      }
+      if (removed[u]) continue;
+      list_remove(u);
+      --current_degrees[u];
+      list_append(current_degrees[u], u);
     }
   }
 
-  return ordering;
+  return degeneracy;
 }
 
 Graph Graph::induced_subgraph(const std::vector<index_t> &vertices) const {

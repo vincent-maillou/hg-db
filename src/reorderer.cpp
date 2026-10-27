@@ -20,24 +20,36 @@ SymmetricDBReorderer::Result SymmetricDBReorderer::reorder(
 
   const bool quiet = opts_.runtime.suppress_output;
 
-  // [1/6] Create graph
-  if (!quiet) std::cout << "\n[1/6] Creating standard graph" << std::endl;
+  // [1/8] Ingestion / graph build (v5 D3/D7: this stage is timed as
+  // time_ingestion_ms; the C API adds its CSR-copy time on top).
+  if (!quiet) std::cout << "\n[1/8] Creating standard graph" << std::endl;
   timer.reset();
   Graph graph = Graph::from_symmetric_matrix(matrix);
-  result.stats.time_graph_ms = timer.elapsed_ms();
+  result.stats.time_ingestion_ms = timer.elapsed_ms();
   result.stats.n_vertices = graph.n_vertices();
   result.stats.n_edges = graph.n_edges();
   if (!quiet) {
     std::cout << "Graph: " << graph.n_vertices() << " vertices, "
               << graph.n_edges() << " edges" << std::endl;
-    std::cout << "Time: " << result.stats.time_graph_ms << " ms" << std::endl;
+    std::cout << "Time: " << result.stats.time_ingestion_ms << " ms"
+              << std::endl;
   }
 
-  // [2/6] Find edge-clique cover
-  if (!quiet) std::cout << "\n[2/6] Finding edge-clique cover" << std::endl;
+  // [2/8]-[4/8] ECC: degeneracy, enumeration, greedy (solver-owned stages;
+  // the solver reports them via get_stats() — D5). Cover-level fields stay
+  // owned here.
+  if (!quiet) std::cout << "\n[2/8]-[4/8] Finding edge-clique cover"
+                        << std::endl;
   timer.reset();
   CliqueCover cover = ecc_solver_->solve(graph);
-  result.stats.time_ecc_ms = timer.elapsed_ms();
+  const Statistics& solver_stats = ecc_solver_->get_stats();
+  result.stats.degeneracy = solver_stats.degeneracy;
+  result.stats.n_maximal_cliques = solver_stats.n_maximal_cliques;
+  result.stats.maximal_clique_enumeration_histogram =
+      solver_stats.maximal_clique_enumeration_histogram;
+  result.stats.time_degeneracy_ms = solver_stats.time_degeneracy_ms;
+  result.stats.time_enumeration_ms = solver_stats.time_enumeration_ms;
+  result.stats.time_greedy_ms = solver_stats.time_greedy_ms;
   result.stats.ecc_method_used = opts_.ecc.method;
   result.stats.n_cliques = cover.n_cliques();
   result.stats.max_clique_size = cover.max_clique_size();
@@ -46,11 +58,14 @@ SymmetricDBReorderer::Result SymmetricDBReorderer::reorder(
   if (!quiet) {
     std::cout << "Clique cover: " << cover.n_cliques() << " cliques"
               << std::endl;
-    std::cout << "Time: " << result.stats.time_ecc_ms << " ms" << std::endl;
+    std::cout << "Time: "
+              << solver_stats.time_degeneracy_ms + solver_stats.time_enumeration_ms +
+                     solver_stats.time_greedy_ms
+              << " ms" << std::endl;
   }
 
-  // [3/6] Create clique-node hypergraph
-  if (!quiet) std::cout << "\n[3/6] Creating clique-node hypergraph" << std::endl;
+  // [5/8] Create clique-node hypergraph
+  if (!quiet) std::cout << "\n[5/8] Creating clique-node hypergraph" << std::endl;
   timer.reset();
   Hypergraph hg =
       Hypergraph::from_clique_cover(cover, quiet, opts_.partition.node_weighting);
@@ -61,8 +76,8 @@ SymmetricDBReorderer::Result SymmetricDBReorderer::reorder(
   if (!quiet)
     std::cout << "Time: " << result.stats.time_cnh_ms << " ms" << std::endl;
 
-  // [4/6] Partition hypergraph
-  if (!quiet) std::cout << "\n[4/6] Partitioning hypergraph" << std::endl;
+  // [6/8] Partition hypergraph
+  if (!quiet) std::cout << "\n[6/8] Partitioning hypergraph" << std::endl;
   timer.reset();
   HypergraphPartition hg_partition = partitioner_->partition(hg);
   result.stats.time_partition_ms = timer.elapsed_ms();
@@ -75,8 +90,8 @@ SymmetricDBReorderer::Result SymmetricDBReorderer::reorder(
     std::cout << "Time: " << result.stats.time_partition_ms << " ms"
               << std::endl;
 
-  // [5/6] Create vertex separator (map hypergraph partition back to vertices)
-  if (!quiet) std::cout << "\n[5/6] Creating vertex separator" << std::endl;
+  // [7/8] Create vertex separator (map hypergraph partition back to vertices)
+  if (!quiet) std::cout << "\n[7/8] Creating vertex separator" << std::endl;
   timer.reset();
   VertexPartition vertex_partition =
       partitioner_->create_vertex_partition(hg_partition, cover,
@@ -112,12 +127,13 @@ SymmetricDBReorderer::Result SymmetricDBReorderer::reorder(
     std::cout << "Time: " << result.stats.time_separator_ms << " ms"
               << std::endl;
 
-  // [6/6] Build the DB permutation: diagonal blocks first, separator last.
+  // [8/8] Build the DB permutation: diagonal blocks first, separator last.
   // (Permutation-only contract, spec D12 — the matrix itself is never
-  // permuted inside HG-DB.)
-  if (!quiet) std::cout << "\n[6/6] Building permutation" << std::endl;
-  timer.reset();
+  // permuted inside HG-DB.) The partition deep-copy is deliberately OUTSIDE
+  // the timed block (v5 D3): the stage times the permutation assembly only.
+  if (!quiet) std::cout << "\n[8/8] Building permutation" << std::endl;
   result.partition = vertex_partition;
+  timer.reset();
   {
     std::vector<index_t> perm;
     perm.reserve(graph.n_vertices());
@@ -144,6 +160,10 @@ SymmetricDBReorderer::Result SymmetricDBReorderer::reorder(
   result.stats.n_cols = matrix.n_cols();
   result.stats.nnz = matrix.nnz();
 
+  // Pipeline wall clock (v5 D7). Direct C++ callers of reorder() report
+  // ingestion = graph build only and total = pipeline only; the C API
+  // (hgr_reorder_csr) adds its CSR-copy time to ingestion and overwrites
+  // the total with the whole-call wall clock.
   result.stats.time_total_ms = total_timer.elapsed_ms();
 
   return result;

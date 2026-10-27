@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(hypergraph_reorder VERSION 4.1.0 LANGUAGES CXX C)
+project(hypergraph_reorder VERSION 5.0.0 LANGUAGES CXX C)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -84,7 +84,7 @@ endif()
 
 set_target_properties(hypergraph_reorder PROPERTIES
     VERSION ${PROJECT_VERSION}
-    SOVERSION 4
+    SOVERSION 5
     PUBLIC_HEADER include/hypergraph_reorder.h
 )
 
