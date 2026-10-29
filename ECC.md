@@ -361,6 +361,62 @@ constructor-time and outside all timers — warm up before benchmarking.
 The two v4 timing keys were dropped outright (no compatibility keys;
 historical names appear in the agents.md changelog only).
 
+## Threading (v5.1)
+
+One `num_threads` field drives two runtimes with different granularity:
+
+| Stage | Runtime | Granularity | Effective value |
+|---|---|---|---|
+| ECC Phase 1 (BK / TriEnum enumeration) | OpenMP (`libgomp`) | **per call** | this call's `num_threads` (`omp_set_num_threads` inside `solve()`) |
+| CNH partition (`mt_kahypar_partition`) | TBB arena (MT-KaHyPar) | **per process** | the first `num_threads` ever used in the process; later values are ignored (stderr warning) |
+
+All other stages are sequential C++. The two runtimes never run
+concurrently, so there is no intra-call oversubscription.
+
+**Pool pinning.** The MT-KaHyPar thread pool is created by the first
+reorderer constructed in the process and **cannot be resized**
+(MT-KaHyPar 1.6.1 has no pool-resize API: `prepare_context()` always sets
+`context.shared_memory.num_threads = parallel::total_number_of_threads()`;
+re-verify on upgrade). A later reorderer requesting a different count
+keeps the first pool and prints a stderr warning at request time. The
+actual pool size is observable at result time via the additive C
+accessor `hgr_get_mtkahypar_pool_threads()` (0 before first init) and,
+in Parallax, `metadata["mtkahypar_pool_threads"]` — mismatch detection =
+compare against `metadata["num_threads"]` (the echoed request).
+**Benchmark methodology:** sweep thread counts in **separate processes**;
+never within one process.
+
+**`num_threads = 0` (auto).** Auto-detect is the number of CPUs available
+to the *process*, affinity-aware: on Linux `sched_getaffinity`'s CPU-set
+size (respects SLURM/taskset/cgroup cpuset allocations), falling back to
+`std::thread::hardware_concurrency()` (floored at 1) off-Linux or on
+failure. This count sizes the pool at first init. The ECC OpenMP stage
+is resolved separately inside each solver call: it maps `0 →
+omp_get_max_threads()`, so an explicit `OMP_NUM_THREADS` environment
+override still wins for that stage when the config `num_threads` is 0
+(when the config `num_threads` is > 0, `omp_set_num_threads` pins the
+stage regardless of the environment). With no `OMP_NUM_THREADS` set, both
+stages resolve to the same affinity-aware count. There is deliberately
+no graph-size heuristic: the pool must exist before any matrix is seen
+(and can never be resized), and on SuiteSparse-scale inputs all available
+cores is the right answer for both parallel stages.
+
+**hwloc / thread pinning (MT-KaHyPar).** Disabled by default
+(`KAHYPAR_DISABLE_HWLOC=ON`, `KAHYPAR_ENABLE_THREAD_PINNING=OFF` in the
+Parallax build): with the affinity-aware auto-detect above, the
+oversubscription-correctness problem is solved without a new dependency.
+Opt-in (NUMA locality, pinning): drop `-DKAHYPAR_DISABLE_HWLOC=ON` from
+`PARALLAX_MTKAHYPAR_EXTRA_ARGS`. Note: `interleaved_allocations=true`
+passed to `mt_kahypar_initialize` is currently a **no-op** with hwloc
+disabled.
+
+**Build flags.** `USE_OPENMP=ON` (default) builds the OpenMP enumeration
+stage; `OFF` is a supported configuration (sequential enumeration — the
+`#ifdef USE_OPENMP` fallbacks). `HGDB_ARCH_NATIVE=ON` (default) appends
+`-march=native` to the release flags — a *build-host* ISA decision;
+set `OFF` for portable/distributed builds. Release flags are appended,
+not clobbered, so a caller-provided `CMAKE_CXX_FLAGS_RELEASE` survives.
+
 ## Data Structures
 
 ### CliqueCover

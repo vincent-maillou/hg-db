@@ -1,4 +1,12 @@
 // partitioner.cpp - MT-KaHyPar integration implementation
+
+// Must precede every include: sched_getaffinity / CPU_COUNT are GNU
+// extensions and this build compiles with -std=c++20 (CMAKE_CXX_EXTENSIONS
+// OFF), so _GNU_SOURCE is not predefined by the toolchain.
+#if defined(__linux__) && !defined(_GNU_SOURCE)
+#define _GNU_SOURCE
+#endif
+
 #include "hypergraph_reorder/partitioner.hpp"
 
 #include <mtkahypar.h>
@@ -7,6 +15,10 @@
 #include <iostream>
 #include <thread>
 #include <unordered_set>
+
+#if defined(__linux__)
+#include <sched.h>  // sched_getaffinity / CPU_COUNT (affinity-aware autodetect)
+#endif
 
 namespace hypergraph_reorder {
 
@@ -29,7 +41,26 @@ mt_kahypar_preset_type_t convert_preset(MtKahyparPreset preset) {
 // Thread pool initialization flag
 bool s_initialized = false;
 size_t s_initialized_num_threads = 0;
+
+// CPUs available to this process (affinity-aware). Falls back to
+// hardware_concurrency() off-Linux or on failure (floored at 1).
+// Respects SLURM/taskset/cgroup cpuset allocations. Spec WP1 D2.
+size_t available_cpus() {
+#if defined(__linux__)
+  cpu_set_t set;
+  if (sched_getaffinity(0, sizeof(set), &set) == 0) {
+    const int count = CPU_COUNT(&set);
+    if (count > 0) return static_cast<size_t>(count);
+  }
+#endif
+  const unsigned hw = std::thread::hardware_concurrency();
+  return hw > 0 ? static_cast<size_t>(hw) : 1;
+}
 }  // namespace
+
+size_t mtkahypar_pool_threads() {
+  return s_initialized ? s_initialized_num_threads : 0;
+}
 
 HypergraphPartitioner::HypergraphPartitioner(const PartitionOptions& opts,
                                              int num_threads,
@@ -46,10 +77,9 @@ HypergraphPartitioner::~HypergraphPartitioner() { cleanup_context(); }
 void HypergraphPartitioner::init_context() {
   // Initialize MT-KaHyPar thread pool (once globally)
   if (!s_initialized) {
-    size_t num_threads =
-        num_threads_ > 0
-            ? static_cast<size_t>(num_threads_)
-            : std::max(1u, std::thread::hardware_concurrency());
+    size_t num_threads = num_threads_ > 0
+                             ? static_cast<size_t>(num_threads_)
+                             : available_cpus();
     mt_kahypar_initialize(num_threads, true);
     s_initialized = true;
     s_initialized_num_threads = num_threads;

@@ -230,6 +230,14 @@ int hgr_get_maximal_clique_enumeration_histogram(hgr_result_t* result,
  * hgr_* call on the same thread. Never returns NULL. */
 const char* hgr_get_last_error(void);
 
+/* Size of the MT-KaHyPar thread pool for this process (0 if the pool is
+ * not initialized yet). The pool is created by the first reorderer and
+ * cannot be resized; num_threads values of later reorderers are ignored
+ * for the partition stage (a stderr warning is printed on mismatch).
+ * The ECC OpenMP stage is unaffected: it honors per-call num_threads.
+ * See ECC.md "Threading". */
+size_t hgr_get_mtkahypar_pool_threads(void);
+
 /* Free result */
 void hgr_result_free(hgr_result_t* result);
 

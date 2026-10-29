@@ -56,6 +56,11 @@ class HypergraphPartitioner {
   void cleanup_context();
 };
 
+// Size of the MT-KaHyPar thread pool for this process; 0 if the pool is
+// not initialized yet. The pool is created by the first
+// HypergraphPartitioner construction and cannot be resized (spec WP1 D1/D3).
+size_t mtkahypar_pool_threads();
+
 }  // namespace hypergraph_reorder
 
 #endif  // HYPERGRAPH_REORDER_PARTITIONER_HPP

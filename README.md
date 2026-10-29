@@ -77,4 +77,6 @@ result = composed.order(sparse_matrix)
    applying the permutation is the caller's job.
 
 See [`ECC.md`](ECC.md) for details on the three clique-cover methods, the
-km1 partitioning objective, and the clique-order histogram.
+km1 partitioning objective, the clique-order histogram, and the
+threading semantics (per-call OpenMP ECC stage vs process-pinned
+MT-KaHyPar pool).

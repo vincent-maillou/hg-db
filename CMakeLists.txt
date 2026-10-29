@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(hypergraph_reorder VERSION 5.0.0 LANGUAGES CXX C)
+project(hypergraph_reorder VERSION 5.1.0 LANGUAGES CXX C)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -8,12 +8,19 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 option(BUILD_SHARED_LIBS "Build shared library" ON)
 option(USE_OPENMP "Enable OpenMP parallelization" ON)
 option(ENABLE_LTO "Enable link-time optimization" ON)
+option(HGDB_ARCH_NATIVE "Compile with -march=native (build-host ISA; disable for portable/distributed builds)" ON)
 
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
 endif()
 
-set(CMAKE_CXX_FLAGS_RELEASE "-O3 -march=native -DNDEBUG")
+# Append to (do not clobber) any CMAKE_CXX_FLAGS_RELEASE the parent build
+# passes via PARALLAX_HGDB_EXTRA_ARGS. Duplicate -O3 from the parent is
+# harmless (last wins).
+string(APPEND CMAKE_CXX_FLAGS_RELEASE " -O3 -DNDEBUG")
+if(HGDB_ARCH_NATIVE)
+    string(APPEND CMAKE_CXX_FLAGS_RELEASE " -march=native")
+endif()
 set(CMAKE_CXX_FLAGS_DEBUG "-g -O0 -Wall -Wextra -Wpedantic")
 
 if(ENABLE_LTO AND CMAKE_BUILD_TYPE STREQUAL "Release")

@@ -13,7 +13,7 @@
 #define HGR_VERSION_MAJOR 5
 #endif
 #ifndef HGR_VERSION_MINOR
-#define HGR_VERSION_MINOR 0
+#define HGR_VERSION_MINOR 1
 #endif
 #ifndef HGR_VERSION_PATCH
 #define HGR_VERSION_PATCH 0
@@ -473,6 +473,10 @@ extern "C" int hgr_get_maximal_clique_enumeration_histogram(
     set_last_error_current_exception();
     return -1;
   }
+}
+
+extern "C" size_t hgr_get_mtkahypar_pool_threads(void) {
+  return mtkahypar_pool_threads();
 }
 
 extern "C" void hgr_result_free(hgr_result_t* result) { delete result; }
