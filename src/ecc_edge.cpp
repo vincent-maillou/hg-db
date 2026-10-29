@@ -8,7 +8,6 @@
 #include "hypergraph_reorder/ecc.hpp"
 
 #include <iostream>
-#include <set>
 #include <utility>
 #include <vector>
 
@@ -25,14 +24,15 @@ CliqueCover EdgeCoverEccSolver::solve(const Graph& graph) {
   // degeneracy stays -1 (spec v5 D1/D2).
   Timer greedy_timer;
 
-  // All edges are uncovered by construction — pass an empty covered set
-  // (the pre-fix behavior, deliberately: every edge becomes a 2-clique
-  // either way). Each remainder 2-clique covers exactly one edge, so the
-  // recorded mass is all-ones with n_edges entries.
-  std::set<std::pair<index_t, index_t>> covered;
+  // All edges are uncovered by construction — pass a zeroed coverage
+  // bitmap (the pre-fix behavior, deliberately: every edge becomes a
+  // 2-clique either way). Each remainder 2-clique covers exactly one
+  // edge, so the recorded mass is all-ones with n_edges entries.
+  std::vector<uint64_t> covered_bits(
+      (static_cast<size_t>(graph.n_edges()) + 63) / 64, 0);
   std::vector<std::vector<index_t>> all_cliques;
   std::vector<index_t> masses;
-  detail::cover_remaining_edges(graph, covered, all_cliques, masses);
+  detail::cover_remaining_edges(graph, covered_bits, all_cliques, masses);
 
   // Cover construction (and the mass move) is timed inside stage 4
   // (WP2 D3).

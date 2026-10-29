@@ -7,7 +7,7 @@
 
 #include <algorithm>
 #include <iostream>
-#include <set>
+#include <utility>
 #include <vector>
 
 #ifdef USE_OPENMP
@@ -112,13 +112,13 @@ CliqueCover TriangleEnumEccSolver::solve(const Graph& graph) {
   if (!opts_.suppress_output)
     std::cout << "Selecting covering triangles..." << std::endl;
   Timer greedy_timer;
-  std::set<std::pair<index_t, index_t>> covered;
+  std::vector<uint64_t> covered_bits;
   std::vector<index_t> masses;
   std::vector<std::vector<index_t>> all_cliques =
-      detail::select_covering_cliques(graph, all_triangles, covered, masses);
+      detail::select_covering_cliques(graph, all_triangles, covered_bits, masses);
 
   // Phase 3: Cover remaining edges with 2-cliques
-  detail::cover_remaining_edges(graph, covered, all_cliques, masses);
+  detail::cover_remaining_edges(graph, covered_bits, all_cliques, masses);
 
   // Cover construction (and the mass move) is timed inside stage 4
   // (WP2 D3): the CSR build is O(n + K) and was the dominant part of the

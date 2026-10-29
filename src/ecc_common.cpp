@@ -21,7 +21,6 @@
 #include <cassert>
 #include <cstdint>
 #include <iterator>
-#include <set>
 #include <utility>
 #include <vector>
 
@@ -48,6 +47,158 @@ struct ActiveEntryLess {
   }
 };
 
+// Indexed 4-ary max-heap over the active candidates, ordered by
+// ActiveEntryLess (marginal descending, rank ascending), with a
+// candidate -> slot map (`heap_slot`, -1 = inactive).
+//
+// Bit-identity argument (WP3 spec D1/D4): `rank` is unique, so the
+// comparator is a strict total order, so the maximum element is unique
+// and the extraction sequence is independent of the heap internals —
+// the same guarantee the std::set active set gave, which is what makes
+// this a drop-in replacement. Every operation is O(log K) with ZERO
+// allocation per greedy event: the std::set paid a red-black-tree node
+// allocation/free pair for every erase+reinsert, i.e. for E_Sigma
+// incidence decrements, which dominated the stage at benchmark scale.
+//
+// 4-ary (not binary): shallower tree, better cache behavior on large K;
+// the choice is invisible to output under the total-order argument.
+class ActiveHeap {
+ public:
+  explicit ActiveHeap(index_t k_candidates)
+      : heap_slot_(static_cast<size_t>(k_candidates), -1) {}
+
+  bool empty() const { return heap_.empty(); }
+
+  bool contains(index_t rank) const { return slot(rank) != -1; }
+
+  // Insert a candidate with the given marginal.
+  void push(index_t marginal, index_t rank) {
+    heap_.push_back({marginal, rank});
+    slot(rank) = static_cast<index_t>(heap_.size()) - 1;
+    sift_up(static_cast<index_t>(heap_.size()) - 1);
+  }
+
+  // Remove and return the maximum element (unique under the strict
+  // total order — exactly what `*active.begin()` returned).
+  ActiveEntry extract_max() {
+    const ActiveEntry best = at(0);
+    slot(best.rank) = -1;
+    const index_t last = static_cast<index_t>(heap_.size()) - 1;
+    if (last > 0) {
+      at(0) = at(last);
+      slot(at(0).rank) = 0;
+    }
+    heap_.pop_back();
+    if (last > 0) sift_down(0);
+    return best;
+  }
+
+  // Decrement a member's marginal by one and restore the heap order.
+  // The key only ever decreases (a set's uncovered-edge count never
+  // grows), so the parent relation upward remains valid and the element
+  // can only move DOWN — an in-place sift-down, no allocation. A
+  // candidate whose marginal reaches zero leaves the active set.
+  void decrement(index_t rank) {
+    const index_t i = slot(rank);
+    if (--at(i).marginal == 0) {
+      erase(rank);
+    } else {
+      sift_down(i);
+    }
+  }
+
+  // Remove an arbitrary member (position known via the slot map): swap
+  // in the last element, pop, then re-order the moved element in its
+  // new position (it may need to go up or down).
+  void erase(index_t rank) {
+    const index_t i = slot(rank);
+    slot(rank) = -1;
+    const index_t last = static_cast<index_t>(heap_.size()) - 1;
+    if (i < last) {
+      at(i) = at(last);
+      slot(at(i).rank) = i;
+      heap_.pop_back();
+      const index_t parent = (i - 1) / 4;
+      if (i > 0 && precedes(at(i), at(parent))) {
+        sift_up(i);
+      } else {
+        sift_down(i);
+      }
+    } else {
+      heap_.pop_back();
+    }
+  }
+
+#ifndef NDEBUG
+  // Full O(K) invariant check (debug builds only; fixture-scale runs):
+  // heap order under ActiveEntryLess, slot-map consistency, and the
+  // active count equal to the heap size.
+  void assert_invariants() const {
+    for (index_t i = 0; i < size(); ++i) {
+      assert(slot(at(i).rank) == i);
+      for (index_t child = 4 * i + 1;
+           child < 4 * i + 5 && child < size();
+           ++child) {
+        assert(precedes(at(i), at(child)));
+      }
+    }
+    index_t n_active = 0;
+    for (const index_t s : heap_slot_) {
+      if (s != -1) ++n_active;
+    }
+    assert(n_active == size());
+  }
+#endif
+
+ private:
+  static bool precedes(const ActiveEntry &a, const ActiveEntry &b) {
+    return ActiveEntryLess{}(a, b);
+  }
+
+  const ActiveEntry &at(index_t i) const {
+    return heap_[static_cast<size_t>(i)];
+  }
+  ActiveEntry &at(index_t i) { return heap_[static_cast<size_t>(i)]; }
+  index_t slot(index_t rank) const {
+    return heap_slot_[static_cast<size_t>(rank)];
+  }
+  index_t &slot(index_t rank) {
+    return heap_slot_[static_cast<size_t>(rank)];
+  }
+  index_t size() const { return static_cast<index_t>(heap_.size()); }
+
+  void sift_up(index_t i) {
+    while (i > 0) {
+      const index_t parent = (i - 1) / 4;
+      if (!precedes(at(i), at(parent))) break;
+      std::swap(at(i), at(parent));
+      slot(at(i).rank) = i;
+      slot(at(parent).rank) = parent;
+      i = parent;
+    }
+  }
+
+  void sift_down(index_t i) {
+    const index_t n = size();
+    while (true) {
+      const index_t first = 4 * i + 1;
+      if (first >= n) break;
+      index_t best = i;
+      for (index_t child = first; child < first + 4 && child < n; ++child) {
+        if (precedes(at(child), at(best))) best = child;
+      }
+      if (best == i) break;
+      std::swap(at(i), at(best));
+      slot(at(i).rank) = i;
+      slot(at(best).rank) = best;
+      i = best;
+    }
+  }
+
+  std::vector<ActiveEntry> heap_;                   // the heap
+  std::vector<index_t> heap_slot_;                  // candidate -> position
+};
+
 // CSR slot of the arc u -> v (v != u). The graph is canonical (adjacency
 // lists sorted ascending, deduplicated), so this is an O(log deg(u))
 // lower_bound with no allocation.
@@ -62,7 +213,7 @@ index_t arc_slot(const Graph &graph, index_t u, index_t v) {
 std::vector<std::vector<index_t>> select_covering_cliques(
     const Graph &graph,
     const std::vector<std::vector<index_t>> &maximal_cliques,
-    std::set<std::pair<index_t, index_t>> &covered_edges,
+    std::vector<uint64_t> &covered_bits,
     std::vector<index_t> &selected_mass) {
   // --- Canonicalize candidates (D3) ---------------------------------------
   // Member lists ascending; candidate order (size desc, canonical key
@@ -118,19 +269,31 @@ std::vector<std::vector<index_t>> select_covering_cliques(
     return edge_id_at[arc_slot(graph, std::min(u, v), std::max(u, v))];
   };
 
-  // --- Per-clique edge lists + edge->cliques incidence (D4) -----------------
-  // One pass over all candidate pairs: each candidate's edge-id list
-  // (computed once) and, CSR-style, for every edge the candidates
-  // containing it (drives the marginal decrements in the greedy loop).
-  std::vector<std::vector<index_t>> clique_edges(k_candidates);
+  // --- Per-clique edge lists + edge->cliques incidence (D4, WP3 D3) ---------
+  // Each candidate's edge-id list lives in ONE flat CSR-style buffer
+  // (clique_edges_ptr/clique_edges_flat) instead of a vector-of-vectors:
+  // pass 1 sizes each candidate combinatorially — s·(s−1)/2 edges for a
+  // clique of size s (0 for s < 2), no pair enumeration needed — and
+  // pass 2 enumerates the pairs in the same (i < j, ascending members)
+  // order as before, so the per-candidate edge-id sequences — and hence
+  // the incidence CSR fill and the greedy marginals — are identical to
+  // the vector-of-vectors version. One allocation for the member array,
+  // one for the prefix; zero per-candidate allocations.
+  std::vector<index_t> clique_edges_ptr(k_candidates + 1, 0);
+  for (index_t c = 0; c < k_candidates; ++c) {
+    const size_t s = cliques[c].size();
+    clique_edges_ptr[c + 1] =
+        clique_edges_ptr[c] + static_cast<index_t>(s >= 2 ? s * (s - 1) / 2 : 0);
+  }
+  std::vector<index_t> clique_edges_flat(clique_edges_ptr[k_candidates]);
   std::vector<index_t> incidence_count(m, 0);
   for (index_t c = 0; c < k_candidates; ++c) {
     const auto &clique = cliques[c];
-    clique_edges[c].reserve(clique.size() * (clique.size() - 1) / 2);
+    index_t cursor = clique_edges_ptr[c];
     for (size_t i = 0; i < clique.size(); ++i) {
       for (size_t j = i + 1; j < clique.size(); ++j) {
         const index_t e = edge_id(clique[i], clique[j]);
-        clique_edges[c].push_back(e);
+        clique_edges_flat[cursor++] = e;
         ++incidence_count[e];
       }
     }
@@ -144,14 +307,20 @@ std::vector<std::vector<index_t>> select_covering_cliques(
     std::vector<index_t> cursor(incidence_ptr.begin(),
                                 incidence_ptr.end() - 1);
     for (index_t c = 0; c < k_candidates; ++c) {
-      for (const index_t e : clique_edges[c]) {
-        incidence[cursor[e]++] = c;
+      for (index_t p = clique_edges_ptr[c]; p < clique_edges_ptr[c + 1]; ++p) {
+        incidence[cursor[clique_edges_flat[p]]++] = c;
       }
     }
   }
 
-  // --- Coverage bitmap + ordered active set (D4) ----------------------------
-  std::vector<uint64_t> covered_bits((static_cast<size_t>(m) + 63) / 64, 0);
+  // --- Coverage bitmap + indexed active heap (D4, WP3 D1/D2) -----------------
+  // The bitmap is the exported coverage (WP3 D2): Phase 3 consumes it
+  // directly, reconstructing edge ids by walk order — no intermediate
+  // set of covered edges is ever built (the v5.2 export walk inserted
+  // every covered edge into a node-based std::set, ≈m allocations on a
+  // BK cover, plus a node-destroying teardown at solve() scope exit
+  // that landed outside every timed stage).
+  covered_bits.assign((static_cast<size_t>(m) + 63) / 64, 0);
   auto is_covered = [&](index_t e) -> uint64_t {
     return (covered_bits[static_cast<size_t>(e) >> 6] >> (e & 63)) & 1ULL;
   };
@@ -159,16 +328,21 @@ std::vector<std::vector<index_t>> select_covering_cliques(
     covered_bits[static_cast<size_t>(e) >> 6] |= 1ULL << (e & 63);
   };
 
-  std::vector<index_t> marginal(k_candidates, 0);
-  std::vector<char> is_active(k_candidates, 0);
-  std::set<ActiveEntry, ActiveEntryLess> active;
+  // Active set = indexed 4-ary max-heap under ActiveEntryLess. The slot
+  // map is the single activity flag; a candidate's current marginal
+  // lives in its heap entry. Initial marginals come from the Phase-1
+  // CSR spans. Zero-marginal candidates never enter (a candidate with
+  // no edges can never cover anything).
+  ActiveHeap active_heap(k_candidates);
   for (index_t c = 0; c < k_candidates; ++c) {
-    marginal[c] = static_cast<index_t>(clique_edges[c].size());
-    if (marginal[c] > 0) {
-      is_active[c] = 1;
-      active.insert({marginal[c], c});
+    const index_t marginal = clique_edges_ptr[c + 1] - clique_edges_ptr[c];
+    if (marginal > 0) {
+      active_heap.push(marginal, c);
     }
   }
+#ifndef NDEBUG
+  active_heap.assert_invariants();
+#endif
 
   // --- Classical greedy selection (D1) ---------------------------------------
   // While edges remain uncovered and an active candidate exists: accept
@@ -178,45 +352,34 @@ std::vector<std::vector<index_t>> select_covering_cliques(
   // candidates are dropped (a set's uncovered-edge count never grows).
   std::vector<std::vector<index_t>> selected_cliques;
   index_t uncovered = m;
-  while (uncovered > 0 && !active.empty()) {
-    const ActiveEntry best = *active.begin();
-    active.erase(active.begin());
+  while (uncovered > 0 && !active_heap.empty()) {
+    const ActiveEntry best = active_heap.extract_max();
     const index_t c = best.rank;
-    is_active[c] = 0;
 
     selected_cliques.push_back(std::move(cliques[c]));
 
     index_t mass = 0;
-    for (const index_t e : clique_edges[c]) {
+    for (index_t p = clique_edges_ptr[c]; p < clique_edges_ptr[c + 1]; ++p) {
+      const index_t e = clique_edges_flat[p];
       if (is_covered(e)) continue;
       mark_covered(e);
       --uncovered;
       ++mass;
-      for (index_t p = incidence_ptr[e]; p < incidence_ptr[e + 1]; ++p) {
-        const index_t d = incidence[p];
-        if (!is_active[d]) continue;
-        active.erase({marginal[d], d});
-        --marginal[d];
-        if (marginal[d] == 0) {
-          is_active[d] = 0;
-        } else {
-          active.insert({marginal[d], d});
+      for (index_t q = incidence_ptr[e]; q < incidence_ptr[e + 1]; ++q) {
+        const index_t d = incidence[q];
+        if (active_heap.contains(d)) {
+          active_heap.decrement(d);
         }
       }
     }
     selected_mass.push_back(mass);
+#ifndef NDEBUG
+    active_heap.assert_invariants();
+#endif
   }
 
-  // --- Export the coverage for Phase 3 ---------------------------------------
-  // Ascending (u, v) walk — the same order the edge ids were assigned in
-  // — so the exported set is sorted, as Phase 3's merge assumes.
-  for (index_t u = 0; u < n; ++u) {
-    for (index_t p = adj_ptr[u]; p < adj_ptr[u + 1]; ++p) {
-      if (u < adj_list[p] && is_covered(edge_id_at[p])) {
-        covered_edges.insert({u, adj_list[p]});
-      }
-    }
-  }
+  // The coverage export is the bitmap itself (WP3 D2) — nothing more to
+  // do here.
 
 #ifndef NDEBUG
   // Debug cross-check (spec §9 risk mitigation): the incremental
@@ -252,28 +415,32 @@ std::vector<std::vector<index_t>> select_covering_cliques(
 
 void cover_remaining_edges(
     const Graph &graph,
-    const std::set<std::pair<index_t, index_t>> &covered_edges,
+    const std::vector<uint64_t> &covered_bits,
     std::vector<std::vector<index_t>> &cliques,
     std::vector<index_t> &masses) {
-  // Walk all graph edges in ascending (u, v) order — the order in which
-  // Phase 2 assigned edge ids — and skip the covered ones with a
-  // two-pointer merge over the (sorted) covered set. Coverage is consumed
-  // as-is; it is never re-derived from the selected cliques.
-  auto covered_it = covered_edges.begin();
+  // Walk all graph edges in ascending (u, v) order — exactly the order
+  // in which Phase 2 assigned edge ids (its pass 1 numbers every u < v
+  // arc over ascending CSR slots, which is precisely this walk) — so a
+  // running counter reconstructs each edge's id with no lookup table
+  // (WP3 D2; the id domain here is Phase 2's id domain by construction).
+  // Per arc: one bitmap test; uncovered edges become remainder 2-cliques.
+  // Coverage is consumed as-is; it is never re-derived from the selected
+  // cliques.
+  index_t e = 0;
   for (index_t u = 0; u < graph.n_vertices(); ++u) {
     for (const index_t v : graph.neighbors(u)) {
       if (v <= u) continue;
-      if (covered_it != covered_edges.end() && covered_it->first == u &&
-          covered_it->second == v) {
-        ++covered_it;
-        continue;
-      }
+      const bool covered =
+          (covered_bits[static_cast<size_t>(e) >> 6] >> (e & 63)) & 1ULL;
+      ++e;  // every u < v arc consumes an id, covered or not
+      if (covered) continue;
       // Each remainder 2-clique covers exactly one edge, so its edge
       // mass is 1 (keeps masses index-aligned with cliques).
       cliques.push_back({u, v});
       masses.push_back(1);
     }
   }
+  assert(e == graph.n_edges());  // the walk enumerated every edge exactly once
 }
 
 }  // namespace detail

@@ -3,8 +3,6 @@
 #define HYPERGRAPH_REORDER_ECC_HPP
 
 #include <memory>
-#include <set>
-#include <utility>
 #include <vector>
 
 #include "clique_cover.hpp"
@@ -100,29 +98,40 @@ namespace detail {
 // (members ascending, list sorted by size desc / key asc), so the result
 // is a pure function of the candidate set — independent of the Phase-1
 // OpenMP schedule (deterministic). Complexity: O(E_Sigma log K) where
-// E_Sigma = total candidate-edge incidences, K = candidates; coverage is
-// tracked with a bitmap plus an ordered active set of current marginals.
-// Returns the selected cliques and, via *covered, the set of edges they
-// cover (consumed by Phase 3). Via *selected_mass, records each accepted
-// clique's marginal at acceptance (the number of edges it first-covered
-// — the edge_fill_mass hypernode weight); index-aligned with the
-// returned selected cliques.
+// E_Sigma = total candidate-edge incidences, K = candidates. Data
+// structures (WP3): dense undirected edge ids, per-candidate edge lists
+// in ONE flat CSR-style buffer, a CSR edge->candidates incidence list,
+// a coverage bitmap over edges handed to Phase 3 directly (no
+// intermediate covered-edge set), and an indexed 4-ary max-heap of the
+// active marginals keyed (marginal desc, rank asc) — the rank is
+// unique, so the heap order is a strict total order and the extraction
+// sequence is independent of the heap internals. O(K + E_Sigma) flat
+// buffers, zero per-event allocations (no heap-node alloc/free pair per
+// decrement; marginal decrease is an in-place sift-down — a candidate's
+// uncovered-edge count never grows). Via *selected_mass, records each
+// accepted clique's marginal at acceptance (the number of edges it
+// first-covered — the edge_fill_mass hypernode weight); index-aligned
+// with the returned selected cliques. Via *covered_bits, exports the
+// coverage bitmap over the dense edge ids (consumed by Phase 3).
 std::vector<std::vector<index_t>> select_covering_cliques(
     const Graph& graph,
     const std::vector<std::vector<index_t>>& maximal_cliques,
-    std::set<std::pair<index_t, index_t>>& covered,
+    std::vector<uint64_t>& covered_bits,
     std::vector<index_t>& selected_mass);
 
 // Phase 3: Cover remaining (uncovered) edges with 2-cliques. Walks all
-// graph edges in ascending (u, v) order (= ascending edge-id order) and
-// skips those present in *covered_edges (the Phase-2 coverage, consumed
-// as-is — never re-derived). Appends 1 per added 2-clique to *masses,
-// keeping it index-aligned with cliques. For BK input this is provably a
-// no-op; it is the safety net for TriEnum (triangle-free edges) and the
-// whole pipeline for EdgeCover (empty covered set).
+// graph edges in ascending (u, v) order — which is exactly ascending
+// edge-id order (the ids were defined by Phase 2's numbering walk over
+// the same ascending CSR slots), so a running counter reconstructs each
+// edge's id with no lookup table — and tests the *covered_bits bitmap
+// (the Phase-2 coverage, consumed as-is — never re-derived). Appends 1
+// per added 2-clique to *masses, keeping it index-aligned with cliques.
+// For BK input this is provably a no-op; it is the safety net for
+// TriEnum (triangle-free edges) and the whole pipeline for EdgeCover
+// (all-zero bitmap).
 void cover_remaining_edges(
     const Graph& graph,
-    const std::set<std::pair<index_t, index_t>>& covered_edges,
+    const std::vector<uint64_t>& covered_bits,
     std::vector<std::vector<index_t>>& cliques,
     std::vector<index_t>& masses);
 

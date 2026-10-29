@@ -104,24 +104,47 @@ elimination — it accepted 86–91% of all enumerated maximal cliques.)
    never grows). Early exit when coverage completes; a trailing
    zero-marginal pass cannot exist.
 
-Data structures (v4.1.0): dense undirected edge ids numbered 0..m-1
-ascending by (u, v); per-candidate edge-id lists (one pass over pairs);
-a CSR-style edge→candidates incidence list; a coverage bitmap over
-edges; and an ordered active set keyed by (marginal desc, size desc,
-canonical rank asc) with erase+reinsert on each decrement. Selection
-cost is O(E_Σ log K), where E_Σ = Σ_C (|C| choose 2) candidate-edge
-incidences and K = candidates — no `has_edge` binary searches, no
-per-edge `std::set` node allocations.
+Data structures (WP3 rework of the v4.1.0 layout): dense undirected edge
+ids numbered 0..m-1 ascending by (u, v); per-candidate edge-id lists in
+ONE flat CSR-style buffer (`clique_edges_ptr`/`clique_edges_flat`, sized
+combinatorially — no per-candidate allocation); a CSR-style
+edge→candidates incidence list; a coverage bitmap over edges; and an
+indexed 4-ary max-heap of the active candidates keyed by
+(marginal desc, rank asc — the rank already encoding size desc /
+canonical key asc) with a candidate→slot map. The slot map makes
+membership a single array probe, marginal
+decrements in-place sift-downs (a set's uncovered-edge count never
+grows, so a candidate can only move down), and zero-marginal removals
+O(log K) — zero allocation per greedy event, where the v5.2
+erase+reinsert `std::set` paid a red-black-tree node allocation/free
+pair per incidence decrement (E_Σ of them).
 
-The final coverage is exported from the bitmap in ascending (u, v)
-order into the covered-edge set passed forward to Phase 3.
+**Bit-identical guarantee.** The candidate rank is unique, so the heap
+comparator (marginal desc, rank asc) is a strict total order: the
+maximum element is unique and the extraction sequence is independent of
+the heap internals. The rework is a pure performance change — on every
+input it selects the same cliques in the same order with the same
+masses as the v4.1.0/v5.2 classical greedy (verified by cover-hash pins
+recorded pre-rework and reproduced post-rework on the standard
+fixtures for all three ECC methods).
+
+Selection cost is O(E_Σ log K), where E_Σ = Σ_C (|C| choose 2)
+candidate-edge incidences and K = candidates — no `has_edge` binary
+searches, no per-edge node allocations.
+
+The coverage is handed to Phase 3 as the bitmap itself (no intermediate
+covered-edge set — the v5.2 export walk, which inserted every covered
+edge into a node-based `std::set`, is gone, along with its teardown at
+`solve()` scope exit).
 
 ## Shared Phase 3: Cover Remaining Edges
 
-1. Walk all graph edges in ascending (u, v) order — the same order in
-   which Phase 2 assigned edge ids — skipping the covered ones via a
-   linear merge against the (sorted) Phase-2 covered-edge set. Coverage
-   is consumed as-is; it is never re-derived from the selected cliques.
+1. Walk all graph edges in ascending (u, v) order — which is *exactly*
+   ascending edge-id order (the ids were assigned by Phase 2's
+   numbering walk over precisely these (u, v>u) arcs), so a running
+   counter reconstructs each edge's id with no lookup table — and test
+   the Phase-2 coverage bitmap per arc. Coverage is consumed as-is; it
+   is never re-derived from the selected cliques.
 2. Add a **2-clique** {u, v} (mass 1) for every remaining uncovered
    edge.
 
@@ -437,10 +460,14 @@ Both provide zero-copy `std::span` access.
 - **TriEnum** is O(m^(3/2)) in the worst case but practical for sparse
   graphs.
 - **EdgeCover** is O(m) — pure bookkeeping.
-- **Greedy selection** (v4.1.0) is O(E_Σ log K) with small constants
-  (E_Σ = total candidate-edge incidences, K = candidates): bitmap
-  coverage, dense edge ids, incidence-list marginal decrements, ordered
-  active set. It replaced v4.0.0's scan carrying two binary searches
-  per pair plus a `std::set` insert/find per edge.
-- **Phase 3 remainder** is a linear O(n + m) bitmap/merge walk.
+- **Greedy selection** (v4.1.0 rule, WP3 data structures) is
+  O(E_Σ log K) with small constants (E_Σ = total candidate-edge
+  incidences, K = candidates): bitmap coverage, dense edge ids, flat
+  CSR per-candidate edge lists, incidence-list marginal decrements, and
+  an indexed 4-ary max-heap with zero allocation per event. The v5.2
+  layout carried a `std::set` erase+reinsert per decrement plus a
+  node-based covered-edge export set (≈m nodes on a BK cover); both are
+  gone (bit-identical output — see Phase 2 above).
+- **Phase 3 remainder** is a linear O(n + m) bitmap walk (edge ids
+  reconstructed by walk order; no merge).
 - **CNH construction** is O(total_pins) with a sort+unique per vertex.
