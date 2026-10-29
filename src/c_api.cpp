@@ -13,7 +13,7 @@
 #define HGR_VERSION_MAJOR 5
 #endif
 #ifndef HGR_VERSION_MINOR
-#define HGR_VERSION_MINOR 1
+#define HGR_VERSION_MINOR 2
 #endif
 #ifndef HGR_VERSION_PATCH
 #define HGR_VERSION_PATCH 0

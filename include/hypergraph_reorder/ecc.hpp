@@ -28,11 +28,13 @@ struct EccOptions {
 // Timing/statistics ownership (v5): each solver populates ONLY the
 // solver-owned Statistics fields — degeneracy, n_maximal_cliques,
 // maximal_clique_enumeration_histogram, time_degeneracy_ms,
-// time_enumeration_ms, time_greedy_ms — exposed via get_stats(). The
-// reorderer merges them right after solve() and keeps owning the
-// cover-level fields (n_cliques, max_clique_size, avg_clique_size,
-// clique_order_counts). Cover-stage wall time is the sum of the three
-// solver-owned timings (no monolithic ECC timing key anymore).
+// time_enumeration_ms, time_greedy_ms (Phase 2 selection + Phase 3
+// remainder + cover CSR construction, WP2 D3) — exposed via
+// get_stats(). The reorderer merges them right after solve() and keeps
+// owning the cover-level fields (n_cliques, max_clique_size,
+// avg_clique_size, clique_order_counts). Cover-stage wall time is the
+// sum of the three solver-owned timings (no monolithic ECC timing key
+// anymore).
 class EccSolver {
  public:
   virtual ~EccSolver() = default;

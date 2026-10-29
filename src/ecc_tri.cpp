@@ -106,7 +106,9 @@ CliqueCover TriangleEnumEccSolver::solve(const Graph& graph) {
     std::cout << "Found " << all_triangles.size() << " triangles"
               << std::endl;
 
-  // Stage 4 of 8 (v5): greedy Phase 2 (selection) + Phase 3 (remainder).
+  // Stage 4 of 8 (v5): greedy Phase 2 (selection) + Phase 3 (remainder),
+  // then cover CSR construction — all inside the stage-4 timing window
+  // (WP2 D3).
   if (!opts_.suppress_output)
     std::cout << "Selecting covering triangles..." << std::endl;
   Timer greedy_timer;
@@ -117,13 +119,17 @@ CliqueCover TriangleEnumEccSolver::solve(const Graph& graph) {
 
   // Phase 3: Cover remaining edges with 2-cliques
   detail::cover_remaining_edges(graph, covered, all_cliques, masses);
+
+  // Cover construction (and the mass move) is timed inside stage 4
+  // (WP2 D3): the CSR build is O(n + K) and was the dominant part of the
+  // v5 untimed total-minus-stages gap.
+  CliqueCover cover(graph.n_vertices(), std::move(all_cliques));
+  cover.set_edge_mass(std::move(masses));
   stats_.time_greedy_ms = greedy_timer.elapsed_ms();
 
   if (!opts_.suppress_output)
-    std::cout << "Total cliques: " << all_cliques.size() << std::endl;
+    std::cout << "Total cliques: " << cover.n_cliques() << std::endl;
 
-  CliqueCover cover(graph.n_vertices(), std::move(all_cliques));
-  cover.set_edge_mass(std::move(masses));
   return cover;
 }
 

@@ -185,17 +185,8 @@ HypergraphPartition HypergraphPartitioner::partition(const Hypergraph& hg) {
     hyperedges[i] = static_cast<mt_kahypar_hyperedge_id_t>(hg.edges()[i]);
   }
 
-  // Convert edge weights (can be null if all weights are 1)
-  const mt_kahypar_hyperedge_weight_t* edge_weights = nullptr;
-  std::vector<mt_kahypar_hyperedge_weight_t> edge_weights_conv;
-  if (!hg.edge_weights().empty()) {
-    edge_weights_conv.resize(hg.edge_weights().size());
-    for (size_t i = 0; i < hg.edge_weights().size(); ++i) {
-      edge_weights_conv[i] =
-          static_cast<mt_kahypar_hyperedge_weight_t>(hg.edge_weights()[i]);
-    }
-    edge_weights = edge_weights_conv.data();
-  }
+  // Net weights are unit by construction (WP2 D5): null is passed
+  // unconditionally — MT-KaHyPar's documented unit-weight path.
 
   // Convert node weights (can be null if all weights are 1)
   const mt_kahypar_hypernode_weight_t* node_weights = nullptr;
@@ -265,8 +256,9 @@ HypergraphPartition HypergraphPartitioner::partition(const Hypergraph& hg) {
   mt_kahypar_error_t error{nullptr, 0, SUCCESS};
   mt_kahypar_hypergraph_t mt_hg = mt_kahypar_create_hypergraph(
       static_cast<mt_kahypar_context_t*>(context_), num_nodes, num_nets,
-      hyperedge_indices.data(), hyperedges.data(), edge_weights, node_weights,
-      &error);
+      hyperedge_indices.data(), hyperedges.data(),
+      nullptr,  // net weights: unit by construction (WP2 D5)
+      node_weights, &error);
 
   if (error.status != SUCCESS) {
     std::string err_msg = error.msg ? error.msg : "Unknown error";

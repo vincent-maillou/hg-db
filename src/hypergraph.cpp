@@ -56,7 +56,6 @@ Hypergraph Hypergraph::from_clique_cover(const CliqueCover &cover,
   // Pre-allocate arrays
   hg.edge_indices_.reserve(n_vertices + 1);
   hg.edges_.reserve(hg.total_pins_);
-  hg.edge_weights_.reserve(n_vertices);
   hg.net_to_vertex_.reserve(n_vertices);
 
   hg.edge_indices_.push_back(0);
@@ -67,19 +66,15 @@ Hypergraph Hypergraph::from_clique_cover(const CliqueCover &cover,
     auto cliques = cover.get_vertex_cliques(v);
 
     if (!cliques.empty()) {
-      // Add net (hyperedge) for this vertex
-      // Deduplicate cliques (cheap safety: a no-op now that the input
-      // graph is canonicalized — a vertex can no longer appear twice in
-      // the same clique's adjacency, but keep it as a guard)
-      std::vector<index_t> unique_cliques(cliques.begin(), cliques.end());
-      std::sort(unique_cliques.begin(), unique_cliques.end());
-      auto last = std::unique(unique_cliques.begin(), unique_cliques.end());
-      unique_cliques.erase(last, unique_cliques.end());
+      // Ascending + deduplicated by CliqueCover's CSR construction
+      // (WP2 D2); guarded by a debug assert instead of a defensive
+      // per-vertex sort+unique pass.
+      assert(std::is_sorted(cliques.begin(), cliques.end()));
+      assert(std::adjacent_find(cliques.begin(), cliques.end()) ==
+             cliques.end());
 
-      hg.edges_.insert(hg.edges_.end(), unique_cliques.begin(),
-                       unique_cliques.end());
+      hg.edges_.insert(hg.edges_.end(), cliques.begin(), cliques.end());
       hg.edge_indices_.push_back(hg.edges_.size());
-      hg.edge_weights_.push_back(1);  // Unit weight
       hg.net_to_vertex_.push_back(v);
       hg.n_nets_++;
     }

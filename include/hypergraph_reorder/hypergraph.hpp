@@ -28,7 +28,6 @@ class Hypergraph {
   const std::vector<size_t> &edge_indices() const { return edge_indices_; }
   const std::vector<index_t> &edges() const { return edges_; }
   const std::vector<int> &node_weights() const { return node_weights_; }
-  const std::vector<int> &edge_weights() const { return edge_weights_; }
 
   // Mapping: net_id -> original vertex_id
   const std::vector<index_t> &net_to_vertex() const { return net_to_vertex_; }
@@ -51,10 +50,13 @@ class Hypergraph {
   index_t total_node_weight_;  // W = sum of node weights (v4)
 
   // Hypergraph in KaHyPar format (zero-copy compatible)
+  // Nets are unit-weight by construction: no net-weight array is stored
+  // and null is passed at the partition boundary (WP2 D5) — MT-KaHyPar's
+  // documented unit-weight path. A future net-weighting feature
+  // re-introduces the field only when it has a consumer.
   std::vector<size_t> edge_indices_;  // Size: n_nets + 1
   std::vector<index_t> edges_;        // Size: total_pins
   std::vector<int> node_weights_;     // Size: n_nodes
-  std::vector<int> edge_weights_;     // Size: n_nets
 
   // Mapping back to original graph
   std::vector<index_t> net_to_vertex_;  // net_id -> vertex_id

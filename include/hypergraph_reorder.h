@@ -156,8 +156,9 @@ typedef struct {
    *                         0.0 otherwise
    * 3 time_enumeration_ms— Phase 1 (parallel BK / triangle enumeration +
    *                         thread merge); 0.0 for EdgeCover
-   * 4 time_greedy_ms     — Phase 2 selection + Phase 3 remainder
-   *                         (EdgeCover: Phase 3 alone)
+   * 4 time_greedy_ms     — Phase 2 selection + Phase 3 remainder +
+   *                         cover CSR construction (EdgeCover: Phase 3
+   *                         + construction alone)
    * 5..8 CNH, partition, separator, permutation.
    * time_total_ms        — whole hgr_reorder_csr call (ingestion
    *                         included). Invariant: total >= sum(8 stages).

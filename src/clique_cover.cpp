@@ -30,27 +30,33 @@ CliqueCover::CliqueCover(index_t n_vertices,
     clique_members_.insert(clique_members_.end(), clique.begin(), clique.end());
   }
 
-  // Build vertex-centric representation (vertex -> cliques)
-  std::vector<std::vector<index_t>> vertex_to_cliques(n_vertices);
+  // Build vertex-centric representation (vertex -> cliques) directly as
+  // CSR: count, prefix-sum, fill. Pass 2 iterates cliques in ascending
+  // cid order and each clique contributes each member exactly once, so
+  // every vertex's entries end up ascending AND deduplicated by
+  // construction (WP2 D2; the invariant D4 asserts on the CNH side).
 
+  // Pass 1: incidence counts per vertex.
+  std::vector<index_t> count(n_vertices + 1, 0);
   for (index_t cid = 0; cid < n_cliques_; ++cid) {
     for (auto v : get_clique(cid)) {
-      vertex_to_cliques[v].push_back(cid);
+      ++count[v + 1];
     }
   }
-
-  // Convert to compressed format
+  // Exclusive prefix sum -> vertex_cliques_ptr_.
   vertex_cliques_ptr_.resize(n_vertices + 1);
   vertex_cliques_ptr_[0] = 0;
-
   for (index_t v = 0; v < n_vertices; ++v) {
-    vertex_cliques_ptr_[v + 1] =
-        vertex_cliques_ptr_[v] + vertex_to_cliques[v].size();
+    vertex_cliques_ptr_[v + 1] = vertex_cliques_ptr_[v] + count[v + 1];
   }
-
-  vertex_cliques_.reserve(vertex_cliques_ptr_[n_vertices]);
-  for (const auto &vec : vertex_to_cliques) {
-    vertex_cliques_.insert(vertex_cliques_.end(), vec.begin(), vec.end());
+  // Pass 2: fill member array; cursor[v] is the next write slot of v.
+  vertex_cliques_.resize(vertex_cliques_ptr_[n_vertices]);
+  std::vector<index_t> cursor(vertex_cliques_ptr_.begin(),
+                              vertex_cliques_ptr_.end() - 1);
+  for (index_t cid = 0; cid < n_cliques_; ++cid) {
+    for (auto v : get_clique(cid)) {
+      vertex_cliques_[cursor[v]++] = cid;
+    }
   }
 }
 
